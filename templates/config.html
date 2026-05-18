@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+    
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div style="margin-bottom: 24px; padding: 16px 20px; border-radius: 12px; background: {% if category == 'success' %}rgba(44, 168, 127, 0.1){% elif category == 'error' %}rgba(220, 38, 38, 0.1){% else %}rgba(62, 201, 215, 0.1){% endif %}; border-left: 4px solid {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; color: {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; font-size: 0.875rem;">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="content-grid">
+    <div class="col-8">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-cog" style="margin-right: 8px; color: var(--primary);"></i>Configuration</span>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/config">
+                    <div class="card" style="background: #f8fafc; margin-bottom: 24px;">
+                        <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                            <span class="card-title" style="font-size: 0.875rem;"><i class="fas fa-search" style="margin-right: 8px; color: var(--info);"></i>Account A2 (Scanner)</span>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom: 16px; color: #64748b; font-size: 0.875rem;">Used only to scan for new requests</p>
+                            <div class="form-group">
+                                <label class="form-label">Email</label>
+                                <input type="email" name="a2_email" class="form-control" value="{{ global_config.account_a2.email }}" placeholder="scanner@example.com" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Password</label>
+                                <input type="password" name="a2_password" class="form-control" value="{{ global_config.account_a2.password }}" placeholder="••••••••" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="background: #f8fafc; margin-bottom: 24px;">
+                        <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                            <span class="card-title" style="font-size: 0.875rem;"><i class="fas fa-user" style="margin-right: 8px; color: var(--success);"></i>Account A1 (Interactor)</span>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom: 16px; color: #64748b; font-size: 0.875rem;">Your main account for expressing interest</p>
+                            <div class="form-group">
+                                <label class="form-label">Email</label>
+                                <input type="email" name="a1_email" class="form-control" value="{{ user_data.a1_email or '' }}" placeholder="main@example.com" required>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Password</label>
+                                <input type="password" name="a1_password" class="form-control" value="{{ user_data.a1_password or '' }}" placeholder="••••••••" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="background: #f8fafc; margin-bottom: 24px;">
+                        <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                            <span class="card-title" style="font-size: 0.875rem;"><i class="fas fa-sliders-h" style="margin-right: 8px; color: var(--warning);"></i>Message & Settings</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Default Message</label>
+                                <textarea name="message" class="form-control" rows="4" placeholder="Enter your default message..." required>{{ user_data.message or global_config.message or '' }}</textarea>
+                                <p style="color: #64748b; font-size: 0.75rem; margin-top: 8px;">Sent when expressing interest</p>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Check Interval (minutes)</label>
+                                <input type="number" name="interval" class="form-control" value="{{ user_data.get('check_interval_minutes', global_config.check_interval_minutes) }}" min="1" max="60" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px;">
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Settings</button>
+                        <a href="/dashboard" class="btn btn-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-4">
+        <div class="card" style="background: linear-gradient(135deg, rgba(229, 138, 0, 0.1) 0%, rgba(229, 138, 0, 0.05) 100%); border: 1px solid rgba(229, 138, 0, 0.2);">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-shield-alt" style="margin-right: 8px; color: var(--warning);"></i>Security Note</span>
+            </div>
+            <div class="card-body">
+                <p style="color: #64748b; font-size: 0.875rem; line-height: 1.6;">
+                    Your credentials are stored locally in <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">config.json</code>. 
+                    Do not commit this file to version control or share it.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

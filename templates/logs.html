@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block page_title %}Logs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-terminal" style="margin-right: 8px; color: var(--primary);"></i>Bot Execution Logs</span>
+        <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="refreshLogs()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <button type="button" class="btn btn-sm btn-primary" onclick="copyLogs()">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+        </div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if logs %}
+        <div id="log-content" class="logs-container" style="max-height: 600px; border-radius: 0;">
+{{ logs }}
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 80px 20px;">
+            <div style="width: 80px; height: 80px; background: #f1f5f9; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <i class="fas fa-file-alt" style="font-size: 2rem; color: #94a3b8;"></i>
+            </div>
+            <p style="color: #64748b; font-size: 1.125rem; margin-bottom: 8px;">No logs available yet</p>
+            <p style="color: #94a3b8; font-size: 0.875rem; margin-bottom: 24px;">Run the bot to generate execution logs</p>
+            <a href="/dashboard" class="btn btn-primary">
+                <i class="fas fa-play"></i> Go to Dashboard
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+function refreshLogs() {
+    location.reload();
+}
+
+function copyLogs() {
+    const logContent = document.getElementById('log-content');
+    if (logContent) {
+        navigator.clipboard.writeText(logContent.textContent).then(() => {
+            showToast('Logs copied to clipboard', 'success');
+        });
+    }
+}
+
+// Auto-refresh every 10 seconds if bot is running
+setInterval(async () => {
+    const response = await fetch('/api/bot/status');
+    const status = await response.json();
+    if (status.running) {
+        refreshLogs();
+    }
+}, 10000);
+</script>
+{% endblock %}

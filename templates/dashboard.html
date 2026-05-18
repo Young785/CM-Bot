@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="stats-grid">
+    <!-- Bot Status -->
+    <div class="stat-card {% if bot_status.running %}success{% else %}warning{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Bot Status</div>
+                <div class="stat-value" id="status-display">{{ 'Running' if bot_status.running else 'Idle' }}</div>
+            </div>
+            <div class="stat-icon {% if bot_status.running %}success{% else %}warning{% endif %}">
+                <i class="fas fa-robot"></i>
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm {% if bot_status.running %}btn-danger{% else %}btn-success{% endif %}" onclick="{% if bot_status.running %}stopBot(){% else %}runBot(){% endif %}" id="run-btn">
+                <i class="fas fa-{% if bot_status.running %}stop{% else %}play{% endif %}"></i>
+                {{ 'Stop' if bot_status.running else 'Run' }}
+            </button>
+        </div>
+    </div>
+    
+    <!-- Auto Scheduler -->
+    <div class="stat-card info">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Auto Scheduler</div>
+                <div class="stat-value" id="scheduler-state" style="font-size: 1.25rem;">Checking...</div>
+                <div id="scheduler-countdown" style="font-size: 0.875rem; color: #64748b; margin-top: 4px; font-weight: 500;">--:--</div>
+            </div>
+            <div class="stat-icon info">
+                <i class="fas fa-clock"></i>
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-success" onclick="startScheduler()" id="start-scheduler-btn" style="display: none;">
+                <i class="fas fa-play"></i> Start
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="stopScheduler()" id="stop-scheduler-btn" style="display: none;">
+                <i class="fas fa-stop"></i> Stop
+            </button>
+        </div>
+    </div>
+    
+    <!-- Total Requests -->
+    <div class="stat-card primary">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">{{ total_requests }}</div>
+            </div>
+            <div class="stat-icon primary">
+                <i class="fas fa-list"></i>
+            </div>
+        </div>
+        <a href="/requests" class="btn btn-sm btn-secondary">
+            View All <i class="fas fa-arrow-right" style="margin-left: 4px;"></i>
+        </a>
+    </div>
+    
+    {% if session.is_admin %}
+    <!-- A2 Token -->
+    <div class="stat-card {% if token_status.A2.has_token %}success{% else %}danger{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">A2 Token (Scanner)</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                    {% if token_status.A2.has_token %}
+                    <span class="badge badge-success"><i class="fas fa-check"></i> Valid</span>
+                    {% else %}
+                    <span class="badge badge-danger"><i class="fas fa-times"></i> Missing</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-icon {% if token_status.A2.has_token %}success{% else %}danger{% endif %}">
+                <i class="fas fa-key"></i>
+            </div>
+        </div>
+        <a href="/tokens" class="btn btn-sm btn-primary">Manage Tokens</a>
+    </div>
+    {% endif %}
+    
+    <!-- A1 Token -->
+    <div class="stat-card {% if token_status.A1.has_token %}success{% else %}warning{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">A1 Token (Your Account)</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                    {% if token_status.A1.has_token %}
+                    <span class="badge badge-success"><i class="fas fa-check"></i> Valid</span>
+                    {% else %}
+                    <span class="badge badge-warning"><i class="fas fa-exclamation"></i> Missing</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-icon {% if token_status.A1.has_token %}success{% else %}warning{% endif %}">
+                <i class="fas fa-user-shield"></i>
+            </div>
+        </div>
+        <a href="/tokens" class="btn btn-sm btn-primary">Manage Tokens</a>
+    </div>
+</div>
+
+<!-- Content Grid -->
+<div class="content-grid">
+    <!-- Recent Logs -->
+    <div class="col-8">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-terminal" style="margin-right: 8px; color: var(--primary);"></i>Recent Logs</span>
+                <a href="/logs" class="btn btn-sm btn-secondary">View Full Logs</a>
+            </div>
+            <div class="card-body">
+                <div id="logs-container" class="logs-container">
+                    Loading logs...
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-4">
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-bolt" style="margin-right: 8px; color: var(--warning);"></i>Quick Actions</span>
+            </div>
+            <div class="card-body">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    <button class="btn btn-success" onclick="runBot()">
+                        <i class="fas fa-play"></i> Run Bot Now
+                    </button>
+                    <button class="btn btn-primary" onclick="startScheduler()">
+                        <i class="fas fa-clock"></i> Start Auto Mode
+                    </button>
+                    <a href="/tokens" class="btn btn-secondary">
+                        <i class="fas fa-key"></i> Manage Tokens
+                    </a>
+                    <a href="/config" class="btn btn-secondary">
+                        <i class="fas fa-cog"></i> Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Start Guide -->
+        <div class="card" style="background: linear-gradient(135deg, rgba(114, 103, 239, 0.1) 0%, rgba(62, 201, 215, 0.1) 100%); border: 1px solid rgba(114, 103, 239, 0.2);">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-lightbulb" style="margin-right: 8px; color: var(--warning);"></i>Quick Start</span>
+            </div>
+            <div class="card-body">
+                <ol style="color: #64748b; font-size: 0.875rem; line-height: 1.8; margin-left: 16px;">
+                    <li>Go to <strong>Tokens</strong> page and set your A1 token</li>
+                    <li>Verify credentials in <strong>Settings</strong></li>
+                    <li>Click <strong>Run Bot</strong> to start processing</li>
+                    <li>Enable <strong>Auto Mode</strong> for background scanning</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function runBot() {
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    
+    try {
+        const response = await fetch('/api/bot/run', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    
+    updateStatus();
+}
+
+async function stopBot() {
+    if (!confirm('Are you sure you want to stop the bot?')) return;
+    
+    try {
+        const response = await fetch('/api/bot/stop', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    
+    updateStatus();
+}
+
+async function pauseBot() {
+    try {
+        const response = await fetch('/api/bot/pause', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    
+    updateStatus();
+}
+
+async function updateStatus() {
+    try {
+        const response = await fetch('/api/bot/status');
+        const status = await response.json();
+        
+        // Update status display
+        const statusDisplay = document.getElementById('status-display');
+        const statusMessage = document.getElementById('status-message');
+        const runBtn = document.getElementById('run-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        
+        if (status.running) {
+            statusDisplay.textContent = status.paused ? 'Paused' : 'Running';
+            statusDisplay.style.color = status.paused ? '#f57c00' : '#4caf50';
+            statusMessage.textContent = status.message;
+            
+            runBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            pauseBtn.style.display = 'inline-block';
+            pauseBtn.textContent = status.paused ? 'Resume' : 'Pause';
+            pauseBtn.className = status.paused ? 'btn btn-success' : 'btn btn-warning';
+        } else {
+            statusDisplay.textContent = 'Idle';
+            statusDisplay.style.color = '#666';
+            statusMessage.textContent = status.message || 'Ready';
+            
+            runBtn.style.display = 'inline-block';
+            runBtn.disabled = false;
+            runBtn.textContent = 'Run Bot';
+            stopBtn.style.display = 'none';
+            pauseBtn.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Failed to update status:', e);
+    }
+}
+
+// Update status every 3 seconds
+setInterval(updateStatus, 3000);
+
+// Load recent logs
+async function loadLogs() {
+    try {
+        const response = await fetch('/api/logs');
+        const data = await response.json();
+        const container = document.getElementById('logs-container');
+        if (data.logs) {
+            // Show last 20 lines
+            const lines = data.logs.split('\n').slice(-20);
+            container.textContent = lines.join('\n') || 'No logs yet. Run the bot to see logs.';
+        } else {
+            container.textContent = 'No logs available yet.';
+        }
+    } catch (e) {
+        document.getElementById('logs-container').textContent = 'Failed to load logs.';
+    }
+}
+
+// Initial load
+updateStatus();
+loadLogs();
+
+// Refresh logs every 5 seconds
+setInterval(loadLogs, 5000);
+
+// Refresh dashboard stats every 5 seconds
+async function loadStats() {
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const stats = await response.json();
+        
+        // Update total requests count
+        const totalRequestsEl = document.querySelector('.card .stat-number');
+        if (totalRequestsEl && stats.total_requests !== undefined) {
+            totalRequestsEl.textContent = stats.total_requests;
+        }
+        
+        // Update token status badges
+        if (stats.token_status) {
+            // Could update token status badges here if needed
+        }
+    } catch (e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+// Initial load
+loadStats();
+
+// Scheduler controls
+async function startScheduler() {
+    const btn = document.getElementById('start-scheduler-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+    
+    try {
+        const response = await fetch('/api/scheduler/start', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    
+    updateSchedulerStatus();
+}
+
+async function stopScheduler() {
+    if (!confirm('Stop automatic background processing?')) return;
+    
+    try {
+        const response = await fetch('/api/scheduler/stop', {method: 'POST'});
+        const result = await response.json();
+        alert(result.message);
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+    
+    updateSchedulerStatus();
+}
+
+// Countdown timer
+let countdownInterval = null;
+
+function updateCountdown(nextRunTime) {
+    const countdownEl = document.getElementById('scheduler-countdown');
+    if (!nextRunTime) {
+        countdownEl.textContent = '--:--';
+        return;
+    }
+    
+    const now = new Date().getTime();
+    const nextRun = new Date(nextRunTime).getTime();
+    const diff = nextRun - now;
+    
+    if (diff <= 0) {
+        countdownEl.textContent = 'Running now...';
+        return;
+    }
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    countdownEl.textContent = `Next run in: ${minutes}m ${seconds}s`;
+}
+
+async function updateSchedulerStatus() {
+    try {
+        const response = await fetch('/api/scheduler/status');
+        const status = await response.json();
+        
+        const stateEl = document.getElementById('scheduler-state');
+        const startBtn = document.getElementById('start-scheduler-btn');
+        const stopBtn = document.getElementById('stop-scheduler-btn');
+        const countdownEl = document.getElementById('scheduler-countdown');
+        
+        if (status.running) {
+            stateEl.textContent = 'Running';
+            stateEl.style.color = '#2ca87f';
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            stopBtn.disabled = false;
+            stopBtn.textContent = 'Stop Auto';
+            
+            // Update countdown
+            if (status.next_run) {
+                updateCountdown(status.next_run);
+                // Start countdown interval
+                if (countdownInterval) clearInterval(countdownInterval);
+                countdownInterval = setInterval(() => updateCountdown(status.next_run), 1000);
+            }
+        } else {
+            stateEl.textContent = 'Stopped';
+            stateEl.style.color = '#94a3b8';
+            startBtn.style.display = 'inline-block';
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start Auto';
+            stopBtn.style.display = 'none';
+            countdownEl.textContent = '--:--';
+            if (countdownInterval) clearInterval(countdownInterval);
+        }
+    } catch (e) {
+        console.error('Failed to update scheduler status:', e);
+    }
+}
+
+// Initial load
+updateStatus();
+loadLogs();
+updateSchedulerStatus();
+
+// Refresh intervals
+setInterval(updateStatus, 3000);
+setInterval(loadLogs, 5000);
+setInterval(updateSchedulerStatus, 5000);
+setInterval(loadStats, 5000);
+</script>
+{% endblock %}

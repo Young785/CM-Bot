@@ -1,0 +1,30 @@
+{
+  "5580836f3f3ea345": {
+    "email": "samuel1036252@gmail.com",
+    "password_hash": "scrypt:32768:8:1$eAk4aFtV4iMBEmjK$7f289e985d8bb9f1634d95c1cbac26be336053b93fb4791304fe0385d96ec5ace4e5a4ea64b51651f98ab3655f7dc278843efd4fcf4e2f330e641e9588b4e96c",
+    "created_at": "2026-04-05T17:23:50.128261",
+    "a1_email": "tescointsite@gmail.com",
+    "a1_password": "Bismillahi11!@",
+    "message": "I am an experienced Software Engineer with many years experience in different stacks and i will like to show interest in your requests",
+    "onboarding_complete": true,
+    "is_admin": true
+  },
+  "7cd46974cc4d047b": {
+    "email": "test@test.com",
+    "password_hash": "scrypt:32768:8:1$G4UCKmfnmEID1cIb$a8b34184d25c8195b5d51147712c5d2333ef508a1c99a3d486855dea17288fedf9d52eff0f2858688eac83d3e97fe9cb3a403f373222f401fabbd1fe72d0f78a",
+    "created_at": "2026-04-05T17:39:50.375680",
+    "a1_email": null,
+    "a1_password": null,
+    "message": null,
+    "onboarding_complete": false
+  },
+  "aecec7217331d27d": {
+    "email": "test2@test.com",
+    "password_hash": "scrypt:32768:8:1$rA4GybqMzt4rFgeU$084a9b25971b737ca87a795373fc6c8adf86033aff1595bd08f0e4619dc9d798d28a4e4e14165383804935b54eb118168517dd0946556afca2d07322aa8b7e31",
+    "created_at": "2026-04-05T17:41:07.226307",
+    "a1_email": null,
+    "a1_password": null,
+    "message": null,
+    "onboarding_complete": false
+  }
+}

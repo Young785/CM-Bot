@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <header>
+        <h1>Codementor Bot Dashboard</h1>
+        <p class="subtitle">Test & Control Panel for Codementor.io Automation</p>
+    </header>
+    
+    <nav>
+        <a href="/" class="active">Dashboard</a>
+        <a href="/requests">View Requests</a>
+        <a href="/logs">Logs</a>
+        <a href="/config">Configuration</a>
+    </nav>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <div class="grid">
+        <div class="card">
+            <h3>Status</h3>
+            <div id="status-display">
+                <span class="status-badge status-{{ 'running' if status.is_running else 'idle' }}">
+                    {{ 'Running' if status.is_running else 'Idle' }}
+                </span>
+                <p style="margin-top: 15px; color: #666;">
+                    {{ status.last_action or 'No recent activity' }}
+                </p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>Total Requests</h3>
+            <div class="stat-number">{{ total_requests }}</div>
+            <p class="stat-label">Stored in database</p>
+        </div>
+        
+        <div class="card">
+            <h3>Last Scan</h3>
+            <div class="stat-number" id="last-scan-count">{{ status.requests_found }}</div>
+            <p class="stat-label">
+                {% if status.last_scan %}
+                    {{ status.last_scan[:19] }}
+                {% else %}
+                    Never
+                {% endif %}
+            </p>
+        </div>
+        
+        <div class="card">
+            <h3>Messages Sent</h3>
+            <div class="stat-number" style="color: #4caf50;">{{ status.messages_sent }}</div>
+            <p class="stat-label">Successful interactions</p>
+        </div>
+    </div>
+    
+    <h3 style="margin-bottom: 20px;">Quick Actions</h3>
+    <div class="actions">
+        <button class="btn btn-primary" onclick="testLogin('a2')" id="btn-test-a2">
+            Test A2 Login
+        </button>
+        <button class="btn btn-primary" onclick="testLogin('a1')" id="btn-test-a1">
+            Test A1 Login
+        </button>
+        <button class="btn btn-success" onclick="runScan()" id="btn-scan">
+            Run Scan
+        </button>
+        <button class="btn btn-success" onclick="processNew()" id="btn-process">
+            Process New Requests
+        </button>
+        <a href="/config" class="btn btn-secondary">Edit Config</a>
+        <a href="/requests" class="btn btn-secondary">View All Requests</a>
+    </div>
+    
+    <div class="card" id="results-card" style="display: none;">
+        <h3>Results</h3>
+        <div id="results-content"></div>
+    </div>
+    
+    <h3 style="margin-bottom: 20px;">Configuration Preview</h3>
+    <div class="card">
+        <div class="json-preview">{
+  "account_a2": "{{ config.account_a2.email }}",
+  "account_a1": "{{ config.account_a1.email }}",
+  "message": "{{ config.message[:50] }}...",
+  "interval": {{ config.check_interval_minutes }} min
+}</div>
+        <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
+            Full credentials are hidden. <a href="/config">Edit configuration</a>
+        </p>
+    </div>
+</div>
+
+<script>
+async function testLogin(account) {
+    const btn = document.getElementById(`btn-test-${account}`);
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span> Testing...';
+    
+    const result = await callApi(`/api/test-login/${account}`);
+    
+    btn.disabled = false;
+    btn.innerHTML = `Test ${account.toUpperCase()} Login`;
+    
+    if (result.success) {
+        showToast(`${account.toUpperCase()} login successful!`, 'success');
+    } else {
+        showToast(`${account.toUpperCase()} login failed: ${result.error || 'Unknown error'}`, 'error');
+    }
+}
+
+async function runScan() {
+    const btn = document.getElementById('btn-scan');
+    const resultsCard = document.getElementById('results-card');
+    const resultsContent = document.getElementById('results-content');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span> Scanning...';
+    resultsCard.style.display = 'none';
+    
+    const result = await callApi('/api/scan');
+    
+    btn.disabled = false;
+    btn.innerHTML = 'Run Scan';
+    
+    if (result.error) {
+        showToast(`Scan failed: ${result.error}`, 'error');
+    } else {
+        showToast(`Found ${result.total} requests (${result.new} new)`, 'success');
+        document.getElementById('last-scan-count').textContent = result.total;
+        
+        resultsCard.style.display = 'block';
+        resultsContent.innerHTML = `
+            <p><strong>Total requests found:</strong> ${result.total}</p>
+            <p><strong>New requests:</strong> ${result.new}</p>
+            <p><strong>First 5 requests:</strong></p>
+            <ul style="margin-top: 10px; padding-left: 20px;">
+                ${result.requests.slice(0, 5).map(r => `
+                    <li style="margin-bottom: 10px;">
+                        <strong>${r.title}</strong><br>
+                        <small style="color: #666;">${r.budget} • ${r.author}</small>
+                    </li>
+                `).join('')}
+            </ul>
+            ${result.requests.length > 5 ? `<p style="color: #666;">... and ${result.requests.length - 5} more</p>` : ''}
+        `;
+    }
+    
+    updateStatus();
+}
+
+async function processNew() {
+    const btn = document.getElementById('btn-process');
+    const resultsCard = document.getElementById('results-card');
+    const resultsContent = document.getElementById('results-content');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span> Processing...';
+    resultsCard.style.display = 'none';
+    
+    const result = await callApi('/api/process-new');
+    
+    btn.disabled = false;
+    btn.innerHTML = 'Process New Requests';
+    
+    if (result.error) {
+        showToast(`Processing failed: ${result.error}`, 'error');
+    } else if (result.message) {
+        showToast(result.message, 'info');
+    } else {
+        const successCount = result.results.filter(r => r.success).length;
+        showToast(`Processed ${result.processed} requests (${successCount} successful)`, 'success');
+        
+        resultsCard.style.display = 'block';
+        resultsContent.innerHTML = `
+            <p><strong>Processed:</strong> ${result.processed} requests</p>
+            <p><strong>Successful:</strong> ${successCount}</p>
+            <p><strong>Failed:</strong> ${result.processed - successCount}</p>
+            <ul style="margin-top: 10px; padding-left: 20px;">
+                ${result.results.map(r => `
+                    <li style="margin-bottom: 8px;">
+                        ${r.success ? '✅' : '❌'} ${r.title.substring(0, 50)}${r.title.length > 50 ? '...' : ''}
+                    </li>
+                `).join('')}
+            </ul>
+        `;
+    }
+    
+    updateStatus();
+}
+
+async function updateStatus() {
+    const result = await callApi('/api/status');
+    // Update UI with status if needed
+}
+
+// Auto-refresh status every 5 seconds
+setInterval(updateStatus, 5000);
+</script>
+{% endblock %}

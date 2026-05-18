@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block page_title %}Requests{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="stats-grid" style="margin-bottom: 24px;">
+    <div class="stat-card primary">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">{{ requests|length }}</div>
+            </div>
+            <div class="stat-icon primary">
+                <i class="fas fa-list"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-inbox" style="margin-right: 8px; color: var(--primary);"></i>Stored Requests</span>
+        <button class="btn btn-sm btn-secondary" onclick="refreshRequests()">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if requests %}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Author</th>
+                        <th>Budget</th>
+                        <th>Type</th>
+                        <th>Tags</th>
+                        <th>Interested</th>
+                        <th>Processed</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requests %}
+                    <tr>
+                        <td>
+                            <strong style="color: var(--dark);">{{ req.title[:60] }}{% if req.title|length > 60 %}...{% endif %}</strong>
+                            {% if req.detail_snippet %}
+                                <br><small style="color: #64748b;">{{ req.detail_snippet[:80] }}...</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.author }}</td>
+                        <td>{{ req.budget }}</td>
+                        <td>
+                            <span class="badge {% if req.request_type == '1:1 live help' %}badge-success{% else %}badge-info{% endif %}">
+                                {{ req.request_type }}
+                            </span>
+                        </td>
+                        <td>
+                            {% for tag in req.tags[:3] %}
+                                <span style="display: inline-block; background: rgba(114, 103, 239, 0.1); color: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; margin-right: 4px;">{{ tag }}</span>
+                            {% endfor %}
+                            {% if req.tags|length > 3 %}
+                                <span style="color: #64748b; font-size: 0.75rem;">+{{ req.tags|length - 3 }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.interested_count }}</td>
+                        <td>
+                            {% if req.processed_at %}
+                                <span style="color: var(--success); font-size: 0.875rem;">
+                                    <i class="fas fa-check-circle"></i> {{ req.processed_at[:16] }}
+                                </span>
+                            {% else %}
+                                <span style="color: #94a3b8; font-size: 0.875rem;">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="processRequest('{{ req.request_id }}')">
+                                <i class="fas fa-play"></i> Process
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 80px 20px;">
+            <div style="width: 80px; height: 80px; background: #f1f5f9; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <i class="fas fa-inbox" style="font-size: 2rem; color: #94a3b8;"></i>
+            </div>
+            <p style="color: #64748b; font-size: 1.125rem; margin-bottom: 8px;">No requests stored yet</p>
+            <p style="color: #94a3b8; font-size: 0.875rem; margin-bottom: 24px;">Run the bot to start collecting requests</p>
+            <button class="btn btn-primary" onclick="runScan()">
+                <i class="fas fa-search"></i> Run Scan
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+async function processRequest(requestId) {
+    if (!confirm('Process this request? This will express interest and send a message.')) {
+        return;
+    }
+    
+    const result = await callApi(`/api/process/${requestId}`);
+    
+    if (result.success) {
+        showToast('Request processed successfully!', 'success');
+    } else if (result.error) {
+        showToast(`Failed: ${result.error}`, 'error');
+    } else {
+        showToast('Failed to process request', 'error');
+    }
+}
+
+function refreshRequests() {
+    window.location.reload();
+}
+
+async function runScan() {
+    const result = await callApi('/api/scan');
+    if (!result.error) {
+        window.location.reload();
+    }
+}
+</script>
+{% endblock %}

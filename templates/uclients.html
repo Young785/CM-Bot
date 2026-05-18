@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+
+{% block page_title %}Clients{% endblock %}
+
+{% block content %}
+<!-- Stats Row -->
+<div class="stats-grid">
+    <!-- Total Clients -->
+    <div class="stat-card primary">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Total Clients</div>
+                <div class="stat-value" id="total-clients">0</div>
+            </div>
+            <div class="stat-icon primary">
+                <i class="fas fa-users"></i>
+            </div>
+        </div>
+        <div style="font-size: 0.875rem; color: #64748b;">All contacts from Codementor</div>
+    </div>
+    
+    <!-- Online Clients -->
+    <div class="stat-card success">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Online Now</div>
+                <div class="stat-value" id="online-count">0</div>
+            </div>
+            <div class="stat-icon success">
+                <i class="fas fa-circle"></i>
+            </div>
+        </div>
+        <div style="font-size: 0.875rem; color: #64748b;">Currently active users</div>
+    </div>
+    
+    <!-- Offline Clients -->
+    <div class="stat-card warning">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Offline</div>
+                <div class="stat-value" id="offline-count">0</div>
+            </div>
+            <div class="stat-icon warning">
+                <i class="fas fa-circle"></i>
+            </div>
+        </div>
+        <div style="font-size: 0.875rem; color: #64748b;">Inactive users</div>
+    </div>
+    
+    <!-- Auto Refresh -->
+    <div class="stat-card info">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Auto Refresh</div>
+                <div class="stat-value" id="refresh-status" style="font-size: 1.25rem;">Active</div>
+                <div id="refresh-countdown" style="font-size: 0.875rem; color: #64748b; margin-top: 4px; font-weight: 500;">--:--</div>
+            </div>
+            <div class="stat-icon info">
+                <i class="fas fa-sync"></i>
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-sm btn-success" onclick="startAutoRefresh()" id="start-refresh-btn" style="display: none;">
+                <i class="fas fa-play"></i> Start
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="stopAutoRefresh()" id="stop-refresh-btn">
+                <i class="fas fa-stop"></i> Stop
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Clients Grid -->
+<div class="content-grid">
+    <!-- Online Clients -->
+    <div class="col-6">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fas fa-circle" style="margin-right: 8px; color: var(--success);"></i>
+                    Online Clients
+                </span>
+                <span class="badge badge-success" id="online-badge">0</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <div id="online-clients-list" class="clients-list">
+                    <div style="padding: 40px; text-align: center; color: #64748b;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 16px;"></i>
+                        <p>Loading clients...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Offline Clients -->
+    <div class="col-6">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fas fa-circle" style="margin-right: 8px; color: var(--warning);"></i>
+                    Offline Clients
+                </span>
+                <span class="badge badge-warning" id="offline-badge">0</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                <div id="offline-clients-list" class="clients-list" style="max-height: 600px; overflow-y: auto;">
+                    <div style="padding: 40px; text-align: center; color: #64748b;">
+                        <i class="fas fa-spinner fa-spin" style="font-size: 2rem; margin-bottom: 16px;"></i>
+                        <p>Loading clients...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.clients-list {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.client-item {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #f1f5f9;
+    transition: all 0.2s;
+}
+
+.client-item:hover {
+    background: #f8fafc;
+}
+
+.client-item:last-child {
+    border-bottom: none;
+}
+
+.client-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 16px;
+    background: #e2e8f0;
+}
+
+.client-avatar-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 1.25rem;
+    margin-right: 16px;
+}
+
+.client-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.client-name {
+    font-weight: 600;
+    color: var(--dark);
+    font-size: 0.9375rem;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.client-username {
+    font-size: 0.8125rem;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.client-meta {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.client-status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-left: 8px;
+}
+
+.client-status.online {
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(44, 168, 127, 0.2);
+}
+
+.client-status.offline {
+    background: var(--warning);
+}
+
+.favorite-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    color: #cbd5e1;
+    transition: all 0.2s;
+    font-size: 1rem;
+}
+
+.favorite-btn:hover,
+.favorite-btn.active {
+    color: #fbbf24;
+}
+
+.empty-state {
+    padding: 40px;
+    text-align: center;
+    color: #64748b;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    color: #cbd5e1;
+}
+
+.time-ago {
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(114, 103, 239, 0.1);
+    color: var(--primary);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    margin-left: 8px;
+}
+</style>
+
+<script>
+let autoRefreshInterval = null;
+let countdownInterval = null;
+let nextRefreshTime = null;
+const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// Format time ago
+function timeAgo(timestamp) {
+    if (!timestamp) return 'Unknown';
+    const seconds = Math.floor(Date.now() / 1000 - timestamp);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+    return `${Math.floor(seconds / 604800)}w ago`;
+}
+
+// Format timezone offset
+function formatTimezone(offset) {
+    if (offset === undefined || offset === null) return '';
+    const hours = Math.abs(Math.floor(offset / 3600));
+    const sign = offset >= 0 ? '+' : '-';
+    return `UTC${sign}${hours}`;
+}
+
+// Load clients from API
+async function loadClients() {
+    try {
+        const response = await fetch('/api/clients');
+        const data = await response.json();
+        
+        if (data.success && data.clients) {
+            renderClients(data.clients, data.is_admin_view);
+            updateStats(data.clients, data);
+            
+            // Show admin info
+            if (data.is_admin_view && data.accounts_scanned) {
+                showToast(`Admin view: Scanned ${data.accounts_scanned.length} accounts`, 'info');
+            }
+            
+            // Show warning if using cached data
+            if (data.cached) {
+                showToast(`Using cached data from ${new Date(data.cached_at).toLocaleString()}`, 'info');
+            }
+            
+            // Show which accounts used cached data vs fresh
+            if (data.accounts_with_cached_data && data.accounts_with_cached_data.length > 0) {
+                showToast(`${data.accounts_with_cached_data.length} account(s) using cached data (tokens expired)`, 'warning');
+            }
+            
+            // Show failed accounts warning
+            if (data.failed_accounts && data.failed_accounts.length > 0) {
+                console.warn('Failed to fetch from accounts:', data.failed_accounts);
+            }
+        } else {
+            // Check for specific error types
+            if (data.error && (data.error.includes('401') || data.error.includes('A1 token'))) {
+                showTokenError();
+            } else {
+                showError(data.error || 'Failed to load clients');
+            }
+        }
+    } catch (e) {
+        console.error('Error loading clients:', e);
+        showError('Failed to load clients');
+    }
+}
+
+// Show token error with link to tokens page
+function showTokenError() {
+    const errorHtml = `
+        <div class="empty-state">
+            <i class="fas fa-key" style="color: var(--warning);"></i>
+            <p style="font-weight: 600; margin-bottom: 8px;">A1 Token Required or Expired</p>
+            <p style="font-size: 0.875rem; color: #64748b; margin-bottom: 16px;">
+                Your A1 token is missing or has expired. Please update it in the Tokens page.
+            </p>
+            <a href="/tokens" class="btn btn-sm btn-primary" style="margin-top: 8px;">
+                <i class="fas fa-key"></i> Go to Tokens
+            </a>
+            <button class="btn btn-sm btn-secondary" onclick="loadClients()" style="margin-top: 8px; margin-left: 8px;">
+                <i class="fas fa-redo"></i> Retry
+            </button>
+        </div>
+    `;
+    document.getElementById('online-clients-list').innerHTML = errorHtml;
+    document.getElementById('offline-clients-list').innerHTML = errorHtml;
+}
+
+// Render clients lists
+function renderClients(clients, isAdminView = false) {
+    const onlineList = document.getElementById('online-clients-list');
+    const offlineList = document.getElementById('offline-clients-list');
+    
+    const online = clients.filter(c => c.online_status === 'online');
+    const offline = clients.filter(c => c.online_status !== 'online');
+    
+    // Sort by last_message_at descending
+    online.sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0));
+    offline.sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0));
+    
+    // Render online
+    if (online.length === 0) {
+        onlineList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-user-slash"></i>
+                <p>No online clients</p>
+            </div>
+        `;
+    } else {
+        onlineList.innerHTML = online.map(client => renderClientItem(client, isAdminView)).join('');
+    }
+    
+    // Render offline
+    if (offline.length === 0) {
+        offlineList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-user-clock"></i>
+                <p>No offline clients</p>
+            </div>
+        `;
+    } else {
+        offlineList.innerHTML = offline.map(client => renderClientItem(client, isAdminView)).join('');
+    }
+    
+    // Update badges
+    document.getElementById('online-badge').textContent = online.length;
+    document.getElementById('offline-badge').textContent = offline.length;
+}
+
+// Render single client item
+function renderClientItem(client, isAdminView = false) {
+    const isOnline = client.online_status === 'online';
+    const initials = client.name ? client.name.split(' ').map(n => n[0]).join('').toUpperCase() : '?';
+    const avatarUrl = client.small_avatar_url || '';
+    const timezone = formatTimezone(client.time_zone_offset);
+    const lastSeen = timeAgo(client.last_message_at);
+    const sourceAccount = client._source_account || '';
+    
+    // For admin view, show which account this client came from
+    const sourceBadge = (isAdminView && sourceAccount) ? 
+        `<span class="source-badge" title="From: ${sourceAccount}"><i class="fas fa-user-circle" style="margin-right: 4px;"></i>${sourceAccount.split('@')[0]}</span>` : '';
+    
+    return `
+        <div class="client-item">
+            ${avatarUrl ? 
+                `<img src="${avatarUrl}" alt="${client.name}" class="client-avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` :
+                `<div class="client-avatar-placeholder">${initials}</div>`
+            }
+            <div class="client-info">
+                <div class="client-name">
+                    ${client.name || 'Unknown'}
+                    <span class="client-status ${isOnline ? 'online' : 'offline'}"></span>
+                </div>
+                <div class="client-username">@${client.username || 'unknown'}</div>
+                <div class="client-meta">
+                    ${timezone ? `<span><i class="fas fa-globe" style="margin-right: 4px;"></i>${timezone}</span>` : ''}
+                    <span class="time-ago"><i class="fas fa-clock" style="margin-right: 4px;"></i>${lastSeen}</span>
+                    ${sourceBadge}
+                </div>
+            </div>
+            <button class="favorite-btn ${client.favorited ? 'active' : ''}" onclick="toggleFavorite('${client.username}', ${!client.favorited})" title="${client.favorited ? 'Remove from favorites' : 'Add to favorites'}">
+                <i class="fas fa-star"></i>
+            </button>
+        </div>
+    `;
+}
+
+// Update statistics
+function updateStats(clients, data = {}) {
+    const online = clients.filter(c => c.online_status === 'online').length;
+    const offline = clients.filter(c => c.online_status !== 'online').length;
+    
+    document.getElementById('total-clients').textContent = clients.length;
+    document.getElementById('online-count').textContent = online;
+    document.getElementById('offline-count').textContent = offline;
+    
+    // Update labels for admin view
+    if (data.is_admin_view && data.total_accounts > 1) {
+        document.querySelector('.stats-grid .stat-card.primary .stat-label').textContent = `Total Clients (${data.total_accounts} accounts)`;
+    }
+}
+
+// Show error state
+function showError(message) {
+    const errorHtml = `
+        <div class="empty-state">
+            <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i>
+            <p>${message}</p>
+            <button class="btn btn-sm btn-primary" onclick="loadClients()" style="margin-top: 16px;">
+                <i class="fas fa-redo"></i> Retry
+            </button>
+        </div>
+    `;
+    document.getElementById('online-clients-list').innerHTML = errorHtml;
+    document.getElementById('offline-clients-list').innerHTML = errorHtml;
+}
+
+// Toggle favorite status
+async function toggleFavorite(username, favorited) {
+    try {
+        const response = await fetch('/api/clients/favorite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, favorited })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            loadClients(); // Refresh the list
+        } else {
+            alert('Failed to update favorite status');
+        }
+    } catch (e) {
+        console.error('Error toggling favorite:', e);
+        alert('Error updating favorite status');
+    }
+}
+
+// Auto refresh controls
+function startAutoRefresh() {
+    document.getElementById('start-refresh-btn').style.display = 'none';
+    document.getElementById('stop-refresh-btn').style.display = 'inline-block';
+    document.getElementById('refresh-status').textContent = 'Active';
+    document.getElementById('refresh-status').style.color = '#2ca87f';
+    
+    // Initial load
+    loadClients();
+    
+    // Set next refresh time
+    nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL);
+    
+    // Start auto refresh interval
+    autoRefreshInterval = setInterval(() => {
+        loadClients();
+        nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL);
+    }, REFRESH_INTERVAL);
+    
+    // Start countdown
+    updateCountdown();
+    countdownInterval = setInterval(updateCountdown, 1000);
+}
+
+function stopAutoRefresh() {
+    document.getElementById('start-refresh-btn').style.display = 'inline-block';
+    document.getElementById('stop-refresh-btn').style.display = 'none';
+    document.getElementById('refresh-status').textContent = 'Stopped';
+    document.getElementById('refresh-status').style.color = '#94a3b8';
+    document.getElementById('refresh-countdown').textContent = '--:--';
+    
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+}
+
+function updateCountdown() {
+    const countdownEl = document.getElementById('refresh-countdown');
+    if (!nextRefreshTime) {
+        countdownEl.textContent = '--:--';
+        return;
+    }
+    
+    const now = new Date().getTime();
+    const nextRun = nextRefreshTime.getTime();
+    const diff = nextRun - now;
+    
+    if (diff <= 0) {
+        countdownEl.textContent = 'Refreshing...';
+        return;
+    }
+    
+    const minutes = Math.floor(diff / 60000);
+    const seconds = Math.floor((diff % 60000) / 1000);
+    countdownEl.textContent = `Next refresh: ${minutes}m ${seconds}s`;
+}
+
+// Initial load
+loadClients();
+
+// Start auto refresh by default
+startAutoRefresh();
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    if (countdownInterval) clearInterval(countdownInterval);
+});
+</script>
+{% endblock %}

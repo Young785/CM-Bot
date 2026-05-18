@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block page_title %}Token Management{% endblock %}
+
+{% block content %}
+<!-- Token Status Cards -->
+<div class="stats-grid" style="margin-bottom: 24px;">
+    <div class="stat-card {% if tokens.A1 and tokens.A1.access_token %}success{% else %}warning{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">A1 Token Status</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                    {% if tokens.A1 and tokens.A1.access_token %}
+                    <span class="badge badge-success"><i class="fas fa-check"></i> Valid</span>
+                    {% else %}
+                    <span class="badge badge-warning"><i class="fas fa-exclamation"></i> Missing</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-icon {% if tokens.A1 and tokens.A1.access_token %}success{% else %}warning{% endif %}">
+                <i class="fas fa-user-shield"></i>
+            </div>
+        </div>
+        {% if tokens.A1 and tokens.A1.access_token %}
+        <p style="color: #64748b; font-size: 0.75rem; margin-top: 8px; word-break: break-all;">
+            {{ tokens.A1.access_token[:40] }}...
+        </p>
+        {% endif %}
+    </div>
+    
+    <!-- A2 Token Status -->
+    <div class="stat-card {% if tokens.A2 and tokens.A2.access_token %}success{% else %}danger{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">A2 Token Status (Scanner)</div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                    {% if tokens.A2 and tokens.A2.access_token %}
+                    <span class="badge badge-success"><i class="fas fa-check"></i> Valid</span>
+                    {% else %}
+                    <span class="badge badge-danger"><i class="fas fa-times"></i> Missing</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="stat-icon {% if tokens.A2 and tokens.A2.access_token %}success{% else %}danger{% endif %}">
+                <i class="fas fa-key"></i>
+            </div>
+        </div>
+        {% if tokens.A2 and tokens.A2.access_token %}
+        <p style="color: #64748b; font-size: 0.75rem; margin-top: 8px; word-break: break-all;">
+            {{ tokens.A2.access_token[:40] }}...
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="content-grid">
+    <!-- Token Input Card -->
+    <div class="col-8">
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-key" style="margin-right: 8px; color: var(--primary);"></i>Update A1 Token</span>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">Access Token</label>
+                    <textarea id="a1-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN here from Firefox (A1)..."></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 12px;">
+                    <button type="button" class="btn btn-success" onclick="saveToken('A1')">
+                        <i class="fas fa-save"></i> Save Token
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('a1-token').value=''">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- A2 Token Form -->
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-key" style="margin-right: 8px; color: var(--danger);"></i>Update A2 Token (Scanner)</span>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">Access Token</label>
+                    <textarea id="a2-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN here from Firefox (A2)..."></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 12px;">
+                    <button type="button" class="btn btn-success" onclick="saveToken('A2')">
+                        <i class="fas fa-save"></i> Save Token
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('a2-token').value=''">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Instructions Card -->
+    <div class="col-4">
+        <div class="card" style="background: linear-gradient(135deg, rgba(229, 138, 0, 0.1) 0%, rgba(229, 138, 0, 0.05) 100%); border: 1px solid rgba(229, 138, 0, 0.2);">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-info-circle" style="margin-right: 8px; color: var(--warning);"></i>How to Extract</span>
+            </div>
+            <div class="card-body">
+                <ol style="color: #64748b; font-size: 0.875rem; line-height: 1.8; margin-left: 16px; margin-bottom: 16px;">
+                    <li>Open <strong>Firefox</strong> with logged-in Codementor</li>
+                    <li>Press <strong>F12</strong> for Developer Tools</li>
+                    <li>Go to <strong>Console</strong> tab</li>
+                    <li>Type: <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">document.cookie.match(/ACCESS_TOKEN=([^;]+)/)[1]</code></li>
+                    <li>Copy the token (starts with "eyJ...")</li>
+                    <li>Paste and <strong>Save</strong></li>
+                </ol>
+                <div class="badge badge-warning" style="width: 100%; justify-content: center;">
+                    <i class="fas fa-clock"></i> Tokens expire in ~4 minutes
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function saveToken(account) {
+    const token = document.getElementById(account.toLowerCase() + '-token').value.trim();
+    if (!token) {
+        alert('Please enter a token');
+        return;
+    }
+    
+    const data = {};
+    data[account] = {
+        access_token: token,
+        refresh_token: '',
+        email: account === 'A2' ? 'kodaoluidris@gmail.com' : 'tescointsite@gmail.com'
+    };
+    
+    try {
+        const response = await fetch('/api/tokens', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        alert(result.message);
+        location.reload();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

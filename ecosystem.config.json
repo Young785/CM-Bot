@@ -1,0 +1,20 @@
+{
+  "apps": [
+    {
+      "name": "codementor-bot",
+      "script": "./.venv/bin/python",
+      "args": "app.py",
+      "cwd": "/Users/ariyoayomikun/Downloads/CMBOTv2",
+      "env": {
+        "FLASK_PORT": "5030"
+      },
+      "instances": 1,
+      "autorestart": true,
+      "watch": false,
+      "max_memory_restart": "1G",
+      "log_file": "./logs/combined.log",
+      "out_file": "./logs/out.log",
+      "err_file": "./logs/error.log"
+    }
+  ]
+}
