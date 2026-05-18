@@ -20,7 +20,8 @@ This Python bot automates scanning and responding to codementor.io requests usin
 .venv/bin/pip install aiohttp playwright
 .venv/bin/playwright install chromium
 
-# 2. Configure credentials in config.json (already done)
+# 2. Copy config.example.json to config.json and fill in your credentials
+cp config.example.json config.json
 
 # 3. Extract fresh tokens (see Token Extraction section)
 
@@ -56,25 +57,17 @@ Edit `config.json`:
 ```json
 {
   "account_a2": {
-    "email": "kodaoluidris@gmail.com",
-    "password": "Chelsea@@@111"
+    "email": "your_scanner_account@gmail.com",
+    "password": "your_a2_password"
   },
   "account_a1": {
-    "email": "tescointsite@gmail.com",
-    "password": "Bismillahi11!@"
+    "email": "your_main_account@gmail.com",
+    "password": "your_a1_password"
   },
-  "message": "I am an experienced Software Engineer with many years experience in different stacks and i will like to show interest in your request"
-}
-```
-    "email": "scanner_account@example.com",
-    "password": "password123"
-  },
-  "account_a1": {
-    "email": "main_account@example.com",
-    "password": "password123"
-  },
-  "message": "Your custom message here",
-  "check_interval_minutes": 5
+  "message": "Your custom proposal message here",
+  "check_interval_minutes": 5,
+  "headless_a2": true,
+  "headless_a1": false
 }
 ```
 
