@@ -4,7 +4,7 @@
       "name": "codementor-bot",
       "script": "./.venv/bin/python",
       "args": "app.py",
-      "cwd": "/Users/ariyoayomikun/Downloads/CMBOTv2",
+      "cwd": "/root/CMBOTv2",
       "env": {
         "FLASK_PORT": "5030"
       },

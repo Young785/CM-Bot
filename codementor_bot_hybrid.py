@@ -273,15 +273,18 @@ class CodementorBot:
         from playwright.async_api import async_playwright
         import os
         
+        # Force headless if no display available (headless server)
+        no_display = not os.environ.get('DISPLAY')
+        
         # For A2: check if this is first login (no existing token) or refresh
         if account == 'A2':
             has_existing_token = bool(self.tokens.get('A2', {}).get('access_token', ''))
             # First login: visible, Refresh: headless
-            is_headless = headless if has_existing_token else False
+            is_headless = True if no_display else (headless if has_existing_token else False)
             mode_str = " [headless refresh]" if is_headless else " [first login - visible]"
         else:
-            is_headless = False  # A1 always visible for manual login
-            mode_str = ""
+            is_headless = True if no_display else False
+            mode_str = " [headless - no display]" if no_display else ""
         
         logger.info(f"\n🔓 Opening Chrome browser for {account} ({email}){mode_str}")
         
@@ -338,6 +341,12 @@ class CodementorBot:
             # Check if logged in - if not, wait for login to complete automatically
             login_attempts = 0
             while 'login' in page.url or 'arc.dev' in page.url:
+                if is_headless:
+                    # On headless server, can't do manual login - bail immediately
+                    logger.error("  ✗ Session expired. Cannot login interactively on headless server.")
+                    logger.error("  → Please update the token manually via the web UI (Tokens page).")
+                    logger.error("  → Copy your ACCESS_TOKEN cookie from Codementor in your local browser.")
+                    return None
                 if login_attempts == 0:
                     logger.info("  ⚠ Not logged in. Please login manually in the browser window.")
                     logger.info("  ⏳ Waiting for you to complete login... (will auto-detect)")
@@ -402,7 +411,7 @@ class CodementorBot:
                 pass
     
     async def try_refresh_token(self, account: str) -> Optional[str]:
-        """Try to refresh access token using refresh token API"""
+        """Try to refresh access token using refresh token cookie via headless browser"""
         acc_data = self.tokens.get(account, {})
         refresh_token = acc_data.get('refresh_token', '')
         
@@ -411,60 +420,57 @@ class CodementorBot:
             return None
         
         try:
-            logger.info(f"  Trying refresh token API for {account}...")
-            async with aiohttp.ClientSession() as session:
-                # Common refresh token endpoint patterns
-                refresh_payload = {
-                    "refresh_token": refresh_token,
-                    "grant_type": "refresh_token"
-                }
-                
-                headers = {
-                    'Content-Type': 'application/json',
-                    'Origin': 'https://www.codementor.io',
-                    'Referer': 'https://www.codementor.io/',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:149.0) Gecko/20100101 Firefox/149.0'
-                }
-                
-                # Try the session refresh endpoint first
-                async with session.post(
-                    'https://api.codementor.io/api/auth/refresh',
-                    headers=headers,
-                    json=refresh_payload
-                ) as resp:
-                    if resp.status in [200, 201]:
-                        data = await resp.json()
-                        new_token = data.get('access_token') or data.get('token')
-                        if new_token:
-                            logger.info(f"  ✓ Token refreshed via API")
-                            return new_token
-                    else:
-                        logger.warning(f"  Refresh API returned {resp.status}")
-                        
-                # Alternative: Try using refresh token as cookie
-                cookies = {'REFRESH_TOKEN': refresh_token}
-                async with session.get(
-                    'https://api.codementor.io/api/v2/requests',
-                    headers={
-                        'X-Requested-From': 'cm-web',
-                        'Origin': 'https://www.codementor.io',
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:149.0) Gecko/20100101 Firefox/149.0'
-                    },
-                    cookies=cookies
-                ) as resp:
-                    # Check if we got a new access token in response cookies
-                    if resp.status == 200:
-                        # Try to extract from response if it contains token
-                        try:
-                            data = await resp.json()
-                            # If request succeeded, token might be valid
-                            logger.info(f"  Refresh token still valid")
-                            return None  # Will use existing flow
-                        except:
-                            pass
+            logger.info(f"  Trying refresh token via headless browser for {account}...")
+            from playwright.async_api import async_playwright
+            
+            p = await async_playwright().start()
+            browser = await p.chromium.launch(
+                headless=True,
+                channel='chrome',
+                args=['--no-sandbox', '--disable-web-security', '--disable-dev-shm-usage']
+            )
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            
+            # Set the refresh token cookie
+            await context.add_cookies([{
+                'name': 'REFRESH_TOKEN',
+                'value': refresh_token,
+                'domain': '.codementor.io',
+                'path': '/',
+            }])
+            
+            page = await context.new_page()
+            await page.goto('https://www.codementor.io/m/dashboard/open-requests', timeout=30000)
+            await asyncio.sleep(5)
+            
+            # Extract fresh tokens from cookies
+            new_access = None
+            new_refresh = None
+            cookies = await context.cookies()
+            for c in cookies:
+                if c['name'] == 'ACCESS_TOKEN':
+                    new_access = c['value']
+                elif c['name'] == 'REFRESH_TOKEN':
+                    new_refresh = c['value']
+            
+            await browser.close()
+            await p.stop()
+            
+            if new_access:
+                logger.info(f"  ✓ Token refreshed via headless browser")
+                # Update refresh token too if it changed
+                if new_refresh and new_refresh != refresh_token:
+                    self.tokens.setdefault(account, {})['refresh_token'] = new_refresh
+                    logger.info(f"  ✓ Refresh token also updated")
+                return new_access
+            else:
+                logger.warning(f"  Headless browser refresh failed - no ACCESS_TOKEN in cookies")
+                return None
                         
         except Exception as e:
-            logger.warning(f"  Refresh token API failed: {e}")
+            logger.warning(f"  Refresh token failed: {e}")
         
         return None
     
@@ -522,8 +528,15 @@ class CodementorBot:
             logger.error(f"  ✗ A2 token invalid or expired. Please contact admin to refresh A2 token.")
             return False
         
-        logger.info(f"  🔄 Opening browser for {account} login...")
-        token_data = await self.extract_token_interactive(account, email)
+        import os
+        no_display = not os.environ.get('DISPLAY')
+        
+        if no_display:
+            logger.info(f"  🔄 Attempting headless browser token refresh for {account}...")
+        else:
+            logger.info(f"  🔄 Opening browser for {account} login...")
+        
+        token_data = await self.extract_token_interactive(account, email, headless=no_display)
         
         if token_data and token_data.get('access_token'):
             # Save both tokens

@@ -219,25 +219,33 @@ async function updateStatus() {
         const pauseBtn = document.getElementById('pause-btn');
         
         if (status.running) {
-            statusDisplay.textContent = status.paused ? 'Paused' : 'Running';
-            statusDisplay.style.color = status.paused ? '#f57c00' : '#4caf50';
-            statusMessage.textContent = status.message;
+            if (statusDisplay) {
+                statusDisplay.textContent = status.paused ? 'Paused' : 'Running';
+                statusDisplay.style.color = status.paused ? '#f57c00' : '#4caf50';
+            }
+            if (statusMessage) statusMessage.textContent = status.message;
             
-            runBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            pauseBtn.style.display = 'inline-block';
-            pauseBtn.textContent = status.paused ? 'Resume' : 'Pause';
-            pauseBtn.className = status.paused ? 'btn btn-success' : 'btn btn-warning';
+            if (runBtn) runBtn.style.display = 'none';
+            if (stopBtn) stopBtn.style.display = 'inline-block';
+            if (pauseBtn) {
+                pauseBtn.style.display = 'inline-block';
+                pauseBtn.textContent = status.paused ? 'Resume' : 'Pause';
+                pauseBtn.className = status.paused ? 'btn btn-success' : 'btn btn-warning';
+            }
         } else {
-            statusDisplay.textContent = 'Idle';
-            statusDisplay.style.color = '#666';
-            statusMessage.textContent = status.message || 'Ready';
+            if (statusDisplay) {
+                statusDisplay.textContent = 'Idle';
+                statusDisplay.style.color = '#666';
+            }
+            if (statusMessage) statusMessage.textContent = status.message || 'Ready';
             
-            runBtn.style.display = 'inline-block';
-            runBtn.disabled = false;
-            runBtn.textContent = 'Run Bot';
-            stopBtn.style.display = 'none';
-            pauseBtn.style.display = 'none';
+            if (runBtn) {
+                runBtn.style.display = 'inline-block';
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run Bot';
+            }
+            if (stopBtn) stopBtn.style.display = 'none';
+            if (pauseBtn) pauseBtn.style.display = 'none';
         }
     } catch (e) {
         console.error('Failed to update status:', e);
