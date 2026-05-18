@@ -1,0 +1,29 @@
+# === SENSITIVE DATA - NEVER COMMIT ===
+config.json
+session_tokens.json
+users.json
+
+# Per-user runtime data (contains passwords & tokens)
+user_data/
+
+# Logs
+bot_ui.log
+server.log
+logs/
+
+# Runtime database
+requests_db.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Large API data file
+codementor/apis.json

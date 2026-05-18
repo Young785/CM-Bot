@@ -1,0 +1,12 @@
+{
+  "A1": {
+    "access_token": "",
+    "refresh_token": "",
+    "user_email": "your_main_account@gmail.com"
+  },
+  "A2": {
+    "access_token": "",
+    "refresh_token": "",
+    "user_email": "your_scanner_account@gmail.com"
+  }
+}
