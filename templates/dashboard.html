@@ -51,7 +51,7 @@
         <div class="stat-header">
             <div>
                 <div class="stat-label">Total Requests</div>
-                <div class="stat-value">{{ total_requests }}</div>
+                <div class="stat-value" id="total-requests-count">{{ total_requests }}</div>
             </div>
             <div class="stat-icon primary">
                 <i class="fas fa-list"></i>
@@ -107,7 +107,6 @@
 
 <!-- Content Grid -->
 <div class="content-grid">
-    <!-- Recent Logs -->
     <div class="col-8">
         <div class="card">
             <div class="card-header">
@@ -115,14 +114,11 @@
                 <a href="/logs" class="btn btn-sm btn-secondary">View Full Logs</a>
             </div>
             <div class="card-body">
-                <div id="logs-container" class="logs-container">
-                    Loading logs...
-                </div>
+                <div id="logs-container" class="logs-container">Loading logs...</div>
             </div>
         </div>
     </div>
     
-    <!-- Quick Actions -->
     <div class="col-4">
         <div class="card" style="margin-bottom: 24px;">
             <div class="card-header">
@@ -130,10 +126,10 @@
             </div>
             <div class="card-body">
                 <div style="display: flex; flex-direction: column; gap: 12px;">
-                    <button class="btn btn-success" onclick="runBot()">
+                    <button class="btn btn-success" onclick="runBot()" id="quick-run-btn">
                         <i class="fas fa-play"></i> Run Bot Now
                     </button>
-                    <button class="btn btn-primary" onclick="startScheduler()">
+                    <button class="btn btn-primary" onclick="startScheduler()" id="quick-scheduler-btn">
                         <i class="fas fa-clock"></i> Start Auto Mode
                     </button>
                     <a href="/tokens" class="btn btn-secondary">
@@ -146,7 +142,6 @@
             </div>
         </div>
         
-        <!-- Quick Start Guide -->
         <div class="card" style="background: linear-gradient(135deg, rgba(114, 103, 239, 0.1) 0%, rgba(62, 201, 215, 0.1) 100%); border: 1px solid rgba(114, 103, 239, 0.2);">
             <div class="card-header">
                 <span class="card-title"><i class="fas fa-lightbulb" style="margin-right: 8px; color: var(--warning);"></i>Quick Start</span>
@@ -164,250 +159,173 @@
 </div>
 
 <script>
+let bundleCache = null;
+let bundleCacheAt = 0;
+let countdownInterval = null;
+let schedulerNextRun = null;
+let pollTimer = null;
+
+const BUNDLE_CACHE_MS = 4000;
+
 async function runBot() {
     const btn = document.getElementById('run-btn');
-    btn.disabled = true;
-    btn.textContent = 'Starting...';
-    
-    try {
-        const response = await fetch('/api/bot/run', {method: 'POST'});
-        const result = await response.json();
-        alert(result.message);
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-    
-    updateStatus();
+    const quick = document.getElementById('quick-run-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i> Starting...');
+    setBtnLoading(quick, true, '<i class="fas fa-spinner fa-spin"></i> Starting...');
+    const result = await callApi('/api/bot/run', { method: 'POST' });
+    setBtnLoading(btn, false);
+    setBtnLoading(quick, false);
+    showToast(result.message || (result.success ? 'Bot started' : 'Failed'), result.success ? 'success' : 'error');
+    bundleCacheAt = 0;
+    refreshDashboard(true);
 }
 
 async function stopBot() {
     if (!confirm('Are you sure you want to stop the bot?')) return;
-    
-    try {
-        const response = await fetch('/api/bot/stop', {method: 'POST'});
-        const result = await response.json();
-        alert(result.message);
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-    
-    updateStatus();
+    const btn = document.getElementById('run-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i> Stopping...');
+    const result = await callApi('/api/bot/stop', { method: 'POST' });
+    setBtnLoading(btn, false);
+    showToast(result.message || 'Stopped', result.success ? 'success' : 'error');
+    bundleCacheAt = 0;
+    refreshDashboard(true);
 }
 
-async function pauseBot() {
-    try {
-        const response = await fetch('/api/bot/pause', {method: 'POST'});
-        const result = await response.json();
-        alert(result.message);
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-    
-    updateStatus();
-}
-
-async function updateStatus() {
-    try {
-        const response = await fetch('/api/bot/status');
-        const status = await response.json();
-        
-        // Update status display
-        const statusDisplay = document.getElementById('status-display');
-        const statusMessage = document.getElementById('status-message');
-        const runBtn = document.getElementById('run-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const pauseBtn = document.getElementById('pause-btn');
-        
-        if (status.running) {
-            if (statusDisplay) {
-                statusDisplay.textContent = status.paused ? 'Paused' : 'Running';
-                statusDisplay.style.color = status.paused ? '#f57c00' : '#4caf50';
-            }
-            if (statusMessage) statusMessage.textContent = status.message;
-            
-            if (runBtn) runBtn.style.display = 'none';
-            if (stopBtn) stopBtn.style.display = 'inline-block';
-            if (pauseBtn) {
-                pauseBtn.style.display = 'inline-block';
-                pauseBtn.textContent = status.paused ? 'Resume' : 'Pause';
-                pauseBtn.className = status.paused ? 'btn btn-success' : 'btn btn-warning';
-            }
-        } else {
-            if (statusDisplay) {
-                statusDisplay.textContent = 'Idle';
-                statusDisplay.style.color = '#666';
-            }
-            if (statusMessage) statusMessage.textContent = status.message || 'Ready';
-            
-            if (runBtn) {
-                runBtn.style.display = 'inline-block';
-                runBtn.disabled = false;
-                runBtn.textContent = 'Run Bot';
-            }
-            if (stopBtn) stopBtn.style.display = 'none';
-            if (pauseBtn) pauseBtn.style.display = 'none';
-        }
-    } catch (e) {
-        console.error('Failed to update status:', e);
-    }
-}
-
-// Update status every 3 seconds
-setInterval(updateStatus, 3000);
-
-// Load recent logs
-async function loadLogs() {
-    try {
-        const response = await fetch('/api/logs');
-        const data = await response.json();
-        const container = document.getElementById('logs-container');
-        if (data.logs) {
-            // Show last 20 lines
-            const lines = data.logs.split('\n').slice(-20);
-            container.textContent = lines.join('\n') || 'No logs yet. Run the bot to see logs.';
-        } else {
-            container.textContent = 'No logs available yet.';
-        }
-    } catch (e) {
-        document.getElementById('logs-container').textContent = 'Failed to load logs.';
-    }
-}
-
-// Initial load
-updateStatus();
-loadLogs();
-
-// Refresh logs every 5 seconds
-setInterval(loadLogs, 5000);
-
-// Refresh dashboard stats every 5 seconds
-async function loadStats() {
-    try {
-        const response = await fetch('/api/dashboard/stats');
-        const stats = await response.json();
-        
-        // Update total requests count
-        const totalRequestsEl = document.querySelector('.card .stat-number');
-        if (totalRequestsEl && stats.total_requests !== undefined) {
-            totalRequestsEl.textContent = stats.total_requests;
-        }
-        
-        // Update token status badges
-        if (stats.token_status) {
-            // Could update token status badges here if needed
-        }
-    } catch (e) {
-        console.error('Failed to load stats:', e);
-    }
-}
-
-// Initial load
-loadStats();
-
-// Scheduler controls
 async function startScheduler() {
     const btn = document.getElementById('start-scheduler-btn');
-    btn.disabled = true;
-    btn.textContent = 'Starting...';
-    
-    try {
-        const response = await fetch('/api/scheduler/start', {method: 'POST'});
-        const result = await response.json();
-        alert(result.message);
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-    
-    updateSchedulerStatus();
+    const quick = document.getElementById('quick-scheduler-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i>');
+    setBtnLoading(quick, true, '<i class="fas fa-spinner fa-spin"></i> Starting...');
+    const result = await callApi('/api/scheduler/start', { method: 'POST' });
+    setBtnLoading(btn, false);
+    setBtnLoading(quick, false);
+    showToast(result.message || 'Scheduler updated', result.success ? 'success' : 'error');
+    bundleCacheAt = 0;
+    refreshDashboard(true);
 }
 
 async function stopScheduler() {
     if (!confirm('Stop automatic background processing?')) return;
-    
-    try {
-        const response = await fetch('/api/scheduler/stop', {method: 'POST'});
-        const result = await response.json();
-        alert(result.message);
-    } catch (e) {
-        alert('Error: ' + e.message);
-    }
-    
-    updateSchedulerStatus();
+    const btn = document.getElementById('stop-scheduler-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i>');
+    const result = await callApi('/api/scheduler/stop', { method: 'POST' });
+    setBtnLoading(btn, false);
+    showToast(result.message || 'Stopped', result.success ? 'success' : 'error');
+    bundleCacheAt = 0;
+    refreshDashboard(true);
 }
-
-// Countdown timer
-let countdownInterval = null;
 
 function updateCountdown(nextRunTime) {
     const countdownEl = document.getElementById('scheduler-countdown');
-    if (!nextRunTime) {
-        countdownEl.textContent = '--:--';
+    if (!countdownEl || !nextRunTime) {
+        if (countdownEl) countdownEl.textContent = '--:--';
         return;
     }
-    
-    const now = new Date().getTime();
-    const nextRun = new Date(nextRunTime).getTime();
-    const diff = nextRun - now;
-    
+    const diff = new Date(nextRunTime).getTime() - Date.now();
     if (diff <= 0) {
         countdownEl.textContent = 'Running now...';
         return;
     }
-    
     const minutes = Math.floor(diff / 60000);
     const seconds = Math.floor((diff % 60000) / 1000);
-    countdownEl.textContent = `Next run in: ${minutes}m ${seconds}s`;
+    countdownEl.textContent = 'Next run in: ' + minutes + 'm ' + seconds + 's';
 }
 
-async function updateSchedulerStatus() {
-    try {
-        const response = await fetch('/api/scheduler/status');
-        const status = await response.json();
-        
-        const stateEl = document.getElementById('scheduler-state');
-        const startBtn = document.getElementById('start-scheduler-btn');
-        const stopBtn = document.getElementById('stop-scheduler-btn');
-        const countdownEl = document.getElementById('scheduler-countdown');
-        
-        if (status.running) {
-            stateEl.textContent = 'Running';
-            stateEl.style.color = '#2ca87f';
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            stopBtn.disabled = false;
-            stopBtn.textContent = 'Stop Auto';
-            
-            // Update countdown
-            if (status.next_run) {
-                updateCountdown(status.next_run);
-                // Start countdown interval
-                if (countdownInterval) clearInterval(countdownInterval);
-                countdownInterval = setInterval(() => updateCountdown(status.next_run), 1000);
-            }
-        } else {
-            stateEl.textContent = 'Stopped';
-            stateEl.style.color = '#94a3b8';
-            startBtn.style.display = 'inline-block';
-            startBtn.disabled = false;
-            startBtn.textContent = 'Start Auto';
-            stopBtn.style.display = 'none';
-            countdownEl.textContent = '--:--';
-            if (countdownInterval) clearInterval(countdownInterval);
+function applyBundle(data) {
+    const status = data.bot || {};
+    const statusDisplay = document.getElementById('status-display');
+    const runBtn = document.getElementById('run-btn');
+
+    if (status.running) {
+        if (statusDisplay) {
+            statusDisplay.textContent = status.paused ? 'Paused' : 'Running';
+            statusDisplay.style.color = status.paused ? '#f57c00' : '#2ca87f';
         }
-    } catch (e) {
-        console.error('Failed to update scheduler status:', e);
+        if (runBtn) {
+            runBtn.className = 'btn btn-sm btn-danger';
+            runBtn.innerHTML = '<i class="fas fa-stop"></i> Stop';
+            runBtn.onclick = stopBot;
+            runBtn.disabled = false;
+        }
+    } else {
+        if (statusDisplay) {
+            statusDisplay.textContent = 'Idle';
+            statusDisplay.style.color = '#64748b';
+        }
+        if (runBtn) {
+            runBtn.className = 'btn btn-sm btn-success';
+            runBtn.innerHTML = '<i class="fas fa-play"></i> Run';
+            runBtn.onclick = runBot;
+            runBtn.disabled = false;
+        }
+    }
+
+    const sched = data.scheduler || {};
+    const stateEl = document.getElementById('scheduler-state');
+    const startBtn = document.getElementById('start-scheduler-btn');
+    const stopBtn = document.getElementById('stop-scheduler-btn');
+    if (sched.running) {
+        stateEl.textContent = 'Running';
+        stateEl.style.color = '#2ca87f';
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        schedulerNextRun = sched.next_run;
+        updateCountdown(schedulerNextRun);
+    } else {
+        stateEl.textContent = sched.persisted ? 'Stopped (saved)' : 'Stopped';
+        stateEl.style.color = '#94a3b8';
+        startBtn.style.display = 'inline-block';
+        stopBtn.style.display = 'none';
+        schedulerNextRun = null;
+        document.getElementById('scheduler-countdown').textContent = '--:--';
+    }
+
+    const totalEl = document.getElementById('total-requests-count');
+    if (totalEl && data.stats) {
+        totalEl.textContent = data.stats.total_requests ?? totalEl.textContent;
+    }
+
+    const container = document.getElementById('logs-container');
+    if (container && data.logs !== undefined) {
+        const lines = (data.logs || '').split('\n').slice(-80);
+        const text = lines.join('\n') || 'No logs yet. Run the bot to see logs.';
+        const atBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 40;
+        container.textContent = text;
+        if (atBottom || data.bot_running) {
+            container.scrollTop = container.scrollHeight;
+        }
     }
 }
 
-// Initial load
-updateStatus();
-loadLogs();
-updateSchedulerStatus();
+async function refreshDashboard(force) {
+    const now = Date.now();
+    if (!force && bundleCache && now - bundleCacheAt < BUNDLE_CACHE_MS) {
+        applyBundle(bundleCache);
+        return;
+    }
+    const data = await callApi('/api/dashboard/bundle');
+    bundleCache = data;
+    bundleCacheAt = now;
+    applyBundle(data);
+}
 
-// Refresh intervals
-setInterval(updateStatus, 3000);
-setInterval(loadLogs, 5000);
-setInterval(updateSchedulerStatus, 5000);
-setInterval(loadStats, 5000);
+function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    const busy = bundleCache && (bundleCache.bot_running || (bundleCache.scheduler && bundleCache.scheduler.running));
+    const delay = busy ? 5000 : 10000;
+    pollTimer = setTimeout(async () => {
+        await refreshDashboard(false);
+        schedulePoll();
+    }, delay);
+}
+
+refreshDashboard(true);
+schedulePoll();
+
+if (!countdownInterval) {
+    countdownInterval = setInterval(() => {
+        if (schedulerNextRun) updateCountdown(schedulerNextRun);
+    }, 1000);
+}
 </script>
 {% endblock %}

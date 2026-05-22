@@ -70,6 +70,26 @@
     </div>
 </div>
 
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-body" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+        <div class="form-group" style="margin: 0; flex: 2; min-width: 200px;">
+            <label class="form-label">Search clients</label>
+            <input type="text" id="client-search" class="form-control" placeholder="Name or @username">
+        </div>
+        <div class="form-group" style="margin: 0; min-width: 160px;">
+            <label class="form-label">Show</label>
+            <select id="client-filter" class="form-control">
+                <option value="all">All (online + offline)</option>
+                <option value="online">Online only</option>
+                <option value="offline">Offline only</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" id="refresh-clients-btn" onclick="loadClients(true)">
+            <i class="fas fa-sync-alt"></i> Load all from Codementor
+        </button>
+    </div>
+</div>
+
 <!-- Clients Grid -->
 <div class="content-grid">
     <!-- Online Clients -->
@@ -111,6 +131,22 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<div id="message-modal" class="modal-overlay" onclick="if(event.target===this) closeMessageModal()">
+    <div class="modal-box">
+        <h3 style="margin: 0 0 8px 0; color: var(--dark);">Message client</h3>
+        <p id="modal-client-name" style="color: #64748b; font-size: 0.875rem; margin-bottom: 16px;"></p>
+        <div class="form-group">
+            <label class="form-label">Message</label>
+            <textarea id="modal-message" class="form-control" rows="4" placeholder="Your message..."></textarea>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">
+            <button class="btn btn-primary" id="modal-send-btn" onclick="sendClientMessage()"><i class="fas fa-paper-plane"></i> Send</button>
+            <a id="modal-open-cm" href="#" target="_blank" rel="noopener" class="btn btn-secondary"><i class="fas fa-external-link-alt"></i> Open in Codementor</a>
+            <button class="btn btn-secondary" onclick="closeMessageModal()">Cancel</button>
         </div>
     </div>
 </div>
@@ -220,6 +256,48 @@
     color: #fbbf24;
 }
 
+.message-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    margin-left: 4px;
+}
+
+.message-btn:hover {
+    opacity: 0.9;
+}
+
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.open {
+    display: flex;
+}
+
+.modal-box {
+    background: white;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 480px;
+    padding: 24px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+}
+
+.client-item {
+    cursor: pointer;
+}
+
 .empty-state {
     padding: 40px;
     text-align: center;
@@ -254,7 +332,18 @@
 let autoRefreshInterval = null;
 let countdownInterval = null;
 let nextRefreshTime = null;
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+let messageTarget = null;
+let allClients = [];
+const REFRESH_INTERVAL = 10 * 60 * 1000;
+
+async function loadDefaultMessage() {
+    try {
+        const cfg = await callApi('/api/user/config');
+        return cfg.message || 'Hello!';
+    } catch (e) {
+        return 'Hello!';
+    }
+}
 
 // Format time ago
 function timeAgo(timestamp) {
@@ -276,15 +365,36 @@ function formatTimezone(offset) {
     return `UTC${sign}${hours}`;
 }
 
-// Load clients from API
-async function loadClients() {
+function getFilteredClients() {
+    const q = (document.getElementById('client-search')?.value || '').trim().toLowerCase();
+    const filter = document.getElementById('client-filter')?.value || 'all';
+    return allClients.filter(c => {
+        if (filter === 'online' && c.online_status !== 'online') return false;
+        if (filter === 'offline' && c.online_status === 'online') return false;
+        if (q) {
+            const hay = `${c.name || ''} ${c.username || ''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+// Load clients from API (force=true fetches all pages from Codementor)
+async function loadClients(force) {
+    const btn = document.getElementById('refresh-clients-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i> Loading all...');
     try {
-        const response = await fetch('/api/clients');
-        const data = await response.json();
+        const url = force ? '/api/clients?force=1' : '/api/clients';
+        const data = await callApi(url);
         
         if (data.success && data.clients) {
-            renderClients(data.clients, data.is_admin_view);
-            updateStats(data.clients, data);
+            allClients = data.clients;
+            const filtered = getFilteredClients();
+            renderClients(filtered, data.is_admin_view);
+            updateStats(allClients, data);
+            if (data.total && force) {
+                showToast('Loaded ' + data.total + ' contacts from Codementor', 'success');
+            }
             
             // Show admin info
             if (data.is_admin_view && data.accounts_scanned) {
@@ -316,6 +426,8 @@ async function loadClients() {
     } catch (e) {
         console.error('Error loading clients:', e);
         showError('Failed to load clients');
+    } finally {
+        setBtnLoading(btn, false, null, '<i class="fas fa-sync-alt"></i> Load all from Codementor');
     }
 }
 
@@ -394,8 +506,10 @@ function renderClientItem(client, isAdminView = false) {
     const sourceBadge = (isAdminView && sourceAccount) ? 
         `<span class="source-badge" title="From: ${sourceAccount}"><i class="fas fa-user-circle" style="margin-right: 4px;"></i>${sourceAccount.split('@')[0]}</span>` : '';
     
+    const uname = (client.username || '').replace(/'/g, "\\'");
+    const chatUrl = client.chat_url || `https://www.codementor.io/messages/${client.username || ''}`;
     return `
-        <div class="client-item">
+        <div class="client-item" onclick="openMessageModal('${uname}', '${(client.name || '').replace(/'/g, "\\'")}', '${chatUrl}')">
             ${avatarUrl ? 
                 `<img src="${avatarUrl}" alt="${client.name}" class="client-avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">` :
                 `<div class="client-avatar-placeholder">${initials}</div>`
@@ -412,11 +526,45 @@ function renderClientItem(client, isAdminView = false) {
                     ${sourceBadge}
                 </div>
             </div>
-            <button class="favorite-btn ${client.favorited ? 'active' : ''}" onclick="toggleFavorite('${client.username}', ${!client.favorited})" title="${client.favorited ? 'Remove from favorites' : 'Add to favorites'}">
+            <button class="favorite-btn ${client.favorited ? 'active' : ''}" onclick="event.stopPropagation(); toggleFavorite('${client.username}', ${!client.favorited})" title="Favorite">
                 <i class="fas fa-star"></i>
+            </button>
+            <button class="message-btn" onclick="event.stopPropagation(); openMessageModal('${uname}', '${(client.name || '').replace(/'/g, "\\'")}', '${chatUrl}')" title="Send message">
+                <i class="fas fa-comment"></i>
             </button>
         </div>
     `;
+}
+
+async function openMessageModal(username, name, chatUrl) {
+    messageTarget = username;
+    document.getElementById('modal-client-name').textContent = `${name} (@${username})`;
+    document.getElementById('modal-open-cm').href = chatUrl;
+    document.getElementById('modal-message').value = await loadDefaultMessage();
+    document.getElementById('message-modal').classList.add('open');
+}
+
+function closeMessageModal() {
+    document.getElementById('message-modal').classList.remove('open');
+    messageTarget = null;
+}
+
+async function sendClientMessage() {
+    if (!messageTarget) return;
+    const content = document.getElementById('modal-message').value.trim();
+    const btn = document.getElementById('modal-send-btn');
+    setBtnLoading(btn, true, '<i class="fas fa-spinner fa-spin"></i> Sending...');
+    const result = await callApi('/api/clients/message', {
+        method: 'POST',
+        body: { username: messageTarget, message: content }
+    });
+    setBtnLoading(btn, false, null, '<i class="fas fa-paper-plane"></i> Send');
+    if (result.success) {
+        showToast(result.message || 'Sent!', 'success');
+        closeMessageModal();
+    } else {
+        showToast(result.error || 'Send failed', 'error');
+    }
 }
 
 // Update statistics
@@ -477,15 +625,10 @@ function startAutoRefresh() {
     document.getElementById('refresh-status').textContent = 'Active';
     document.getElementById('refresh-status').style.color = '#2ca87f';
     
-    // Initial load
-    loadClients();
-    
-    // Set next refresh time
     nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL);
-    
-    // Start auto refresh interval
+
     autoRefreshInterval = setInterval(() => {
-        loadClients();
+        loadClients(false);
         nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL);
     }, REFRESH_INTERVAL);
     
@@ -532,11 +675,17 @@ function updateCountdown() {
     countdownEl.textContent = `Next refresh: ${minutes}m ${seconds}s`;
 }
 
-// Initial load
-loadClients();
+document.getElementById('client-search')?.addEventListener('input', () => {
+    renderClients(getFilteredClients());
+});
+document.getElementById('client-filter')?.addEventListener('change', () => {
+    renderClients(getFilteredClients());
+});
 
-// Start auto refresh by default
-startAutoRefresh();
+document.addEventListener('DOMContentLoaded', () => {
+    loadClients(true);
+    startAutoRefresh();
+});
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {

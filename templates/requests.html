@@ -3,17 +3,67 @@
 {% block page_title %}Requests{% endblock %}
 
 {% block content %}
-<!-- Stats Row -->
 <div class="stats-grid" style="margin-bottom: 24px;">
     <div class="stat-card primary">
         <div class="stat-header">
             <div>
                 <div class="stat-label">Total Requests</div>
-                <div class="stat-value">{{ requests|length }}</div>
+                <div class="stat-value" id="stat-total">0</div>
             </div>
-            <div class="stat-icon primary">
-                <i class="fas fa-list"></i>
+            <div class="stat-icon primary"><i class="fas fa-list"></i></div>
+        </div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Processed</div>
+                <div class="stat-value" id="stat-processed">0</div>
             </div>
+            <div class="stat-icon success"><i class="fas fa-check"></i></div>
+        </div>
+    </div>
+    <div class="stat-card warning">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Pending</div>
+                <div class="stat-value" id="stat-pending">0</div>
+            </div>
+            <div class="stat-icon warning"><i class="fas fa-clock"></i></div>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-body">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+            <div class="form-group" style="margin: 0; flex: 2; min-width: 200px;">
+                <label class="form-label">Search</label>
+                <input type="text" id="filter-search" class="form-control" placeholder="Title, author, tags...">
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 140px;">
+                <label class="form-label">Status</label>
+                <select id="filter-status" class="form-control">
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="processed">Processed</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 160px;">
+                <label class="form-label">Type</label>
+                <select id="filter-type" class="form-control">
+                    <option value="all">All types</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin: 0; min-width: 100px;">
+                <label class="form-label">Per page</label>
+                <select id="filter-per-page" class="form-control">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+            <button class="btn btn-secondary" id="reload-requests-btn" onclick="loadRequests()"><i class="fas fa-sync-alt"></i> Reload</button>
+            <button class="btn btn-primary" id="run-scan-btn" onclick="runScan()"><i class="fas fa-search"></i> Run Scan</button>
         </div>
     </div>
 </div>
@@ -21,111 +71,159 @@
 <div class="card">
     <div class="card-header">
         <span class="card-title"><i class="fas fa-inbox" style="margin-right: 8px; color: var(--primary);"></i>Stored Requests</span>
-        <button class="btn btn-sm btn-secondary" onclick="refreshRequests()">
-            <i class="fas fa-sync-alt"></i> Refresh
-        </button>
+        <span id="page-info" style="color: #64748b; font-size: 0.875rem;">Page 1</span>
     </div>
     <div class="card-body" style="padding: 0;">
-        {% if requests %}
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Title</th>
-                        <th>Author</th>
-                        <th>Budget</th>
-                        <th>Type</th>
-                        <th>Tags</th>
-                        <th>Interested</th>
-                        <th>Processed</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for req in requests %}
-                    <tr>
-                        <td>
-                            <strong style="color: var(--dark);">{{ req.title[:60] }}{% if req.title|length > 60 %}...{% endif %}</strong>
-                            {% if req.detail_snippet %}
-                                <br><small style="color: #64748b;">{{ req.detail_snippet[:80] }}...</small>
-                            {% endif %}
-                        </td>
-                        <td>{{ req.author }}</td>
-                        <td>{{ req.budget }}</td>
-                        <td>
-                            <span class="badge {% if req.request_type == '1:1 live help' %}badge-success{% else %}badge-info{% endif %}">
-                                {{ req.request_type }}
-                            </span>
-                        </td>
-                        <td>
-                            {% for tag in req.tags[:3] %}
-                                <span style="display: inline-block; background: rgba(114, 103, 239, 0.1); color: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; margin-right: 4px;">{{ tag }}</span>
-                            {% endfor %}
-                            {% if req.tags|length > 3 %}
-                                <span style="color: #64748b; font-size: 0.75rem;">+{{ req.tags|length - 3 }}</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ req.interested_count }}</td>
-                        <td>
-                            {% if req.processed_at %}
-                                <span style="color: var(--success); font-size: 0.875rem;">
-                                    <i class="fas fa-check-circle"></i> {{ req.processed_at[:16] }}
-                                </span>
-                            {% else %}
-                                <span style="color: #94a3b8; font-size: 0.875rem;">-</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <button class="btn btn-sm btn-primary" onclick="processRequest('{{ req.request_id }}')">
-                                <i class="fas fa-play"></i> Process
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div style="text-align: center; padding: 80px 20px;">
-            <div style="width: 80px; height: 80px; background: #f1f5f9; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
-                <i class="fas fa-inbox" style="font-size: 2rem; color: #94a3b8;"></i>
+        <div id="requests-table-wrap">
+            <div style="padding: 40px; text-align: center; color: #64748b;">
+                <i class="fas fa-spinner fa-spin"></i> Loading...
             </div>
-            <p style="color: #64748b; font-size: 1.125rem; margin-bottom: 8px;">No requests stored yet</p>
-            <p style="color: #94a3b8; font-size: 0.875rem; margin-bottom: 24px;">Run the bot to start collecting requests</p>
-            <button class="btn btn-primary" onclick="runScan()">
-                <i class="fas fa-search"></i> Run Scan
-            </button>
         </div>
-        {% endif %}
+        <div id="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-top: 1px solid #f1f5f9;"></div>
     </div>
 </div>
 
 <script>
-async function processRequest(requestId) {
-    if (!confirm('Process this request? This will express interest and send a message.')) {
-        return;
-    }
-    
-    const result = await callApi(`/api/process/${requestId}`);
-    
-    if (result.success) {
-        showToast('Request processed successfully!', 'success');
-    } else if (result.error) {
-        showToast(`Failed: ${result.error}`, 'error');
-    } else {
-        showToast('Failed to process request', 'error');
-    }
+let allRequests = [];
+let currentPage = 1;
+
+function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
 }
 
-function refreshRequests() {
-    window.location.reload();
+function getFiltered() {
+    const q = document.getElementById('filter-search').value.trim().toLowerCase();
+    const status = document.getElementById('filter-status').value;
+    const type = document.getElementById('filter-type').value;
+
+    return allRequests.filter(r => {
+        if (status === 'processed' && !r.processed_at) return false;
+        if (status === 'pending' && r.processed_at) return false;
+        if (type !== 'all' && r.request_type !== type) return false;
+        if (q) {
+            const hay = `${r.title} ${r.author} ${(r.tags || []).join(' ')}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function renderTable() {
+    const filtered = getFiltered();
+    const perPage = parseInt(document.getElementById('filter-per-page').value, 10);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = (currentPage - 1) * perPage;
+    const pageItems = filtered.slice(start, start + perPage);
+
+    document.getElementById('stat-total').textContent = allRequests.length;
+    document.getElementById('stat-processed').textContent = allRequests.filter(r => r.processed_at).length;
+    document.getElementById('stat-pending').textContent = allRequests.filter(r => !r.processed_at).length;
+    document.getElementById('page-info').textContent = `Showing ${filtered.length ? start + 1 : 0}-${start + pageItems.length} of ${filtered.length} (total ${allRequests.length})`;
+
+    const wrap = document.getElementById('requests-table-wrap');
+    if (!pageItems.length) {
+        wrap.innerHTML = `<div style="text-align:center;padding:60px;color:#64748b;">
+            <i class="fas fa-inbox" style="font-size:2rem;margin-bottom:12px;"></i>
+            <p>No requests match filters</p></div>`;
+    } else {
+        let rows = pageItems.map(r => {
+            const rid = escapeHtml(r.request_id);
+            const tags = (r.tags || []).slice(0, 3).map(t =>
+                `<span style="display:inline-block;background:rgba(114,103,239,0.1);color:var(--primary);padding:2px 8px;border-radius:12px;font-size:0.75rem;margin-right:4px;">${escapeHtml(t)}</span>`
+            ).join('');
+            const proc = r.processed_at
+                ? `<span style="color:var(--success);"><i class="fas fa-check-circle"></i> ${escapeHtml(r.processed_at.slice(0, 16))}</span>`
+                : '<span style="color:#94a3b8;">Pending</span>';
+            const btn = r.processed_at
+                ? `<button class="btn btn-sm btn-secondary" disabled><i class="fas fa-check"></i> Done</button>`
+                : `<button class="btn btn-sm btn-primary" data-process-id="${rid}" onclick="processRequest(this.dataset.processId)"><i class="fas fa-play"></i> Process</button>`;
+            const link = r.url ? `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener" style="font-size:0.75rem;color:var(--primary);">Open</a>` : '';
+            return `<tr>
+                <td><strong>${escapeHtml((r.title || '').slice(0, 60))}</strong>${link ? '<br>' + link : ''}</td>
+                <td>${escapeHtml(r.author)}</td>
+                <td>${escapeHtml(String(r.budget))}</td>
+                <td><span class="badge badge-info">${escapeHtml(r.request_type || '-')}</span></td>
+                <td>${tags}</td>
+                <td>${r.interested_count ?? 0}</td>
+                <td>${proc}</td>
+                <td>${btn}</td>
+            </tr>`;
+        }).join('');
+        wrap.innerHTML = `<div class="table-container"><table><thead><tr>
+            <th>Title</th><th>Author</th><th>Budget</th><th>Type</th><th>Tags</th><th>Interested</th><th>Status</th><th>Action</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
+    const bar = document.getElementById('pagination-bar');
+    bar.innerHTML = `
+        <button class="btn btn-sm btn-secondary" ${currentPage <= 1 ? 'disabled' : ''} onclick="goPage(${currentPage - 1})"><i class="fas fa-chevron-left"></i> Prev</button>
+        <span style="color:#64748b;">Page ${currentPage} / ${totalPages}</span>
+        <button class="btn btn-sm btn-secondary" ${currentPage >= totalPages ? 'disabled' : ''} onclick="goPage(${currentPage + 1})">Next <i class="fas fa-chevron-right"></i></button>
+    `;
+}
+
+function goPage(p) {
+    currentPage = p;
+    renderTable();
+}
+
+async function loadRequests() {
+    const wrap = document.getElementById('requests-table-wrap');
+    const reloadBtn = document.getElementById('reload-requests-btn');
+    setBtnLoading(reloadBtn, true, '<i class="fas fa-spinner fa-spin"></i> Loading...');
+    wrap.innerHTML = '<div style="padding:40px;text-align:center;"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+    const data = await callApi('/api/requests');
+    setBtnLoading(reloadBtn, false, null, '<i class="fas fa-sync-alt"></i> Reload');
+    if (!data.success) {
+        wrap.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger);">${escapeHtml(data.error || 'Failed to load')}</div>`;
+        return;
+    }
+    allRequests = data.requests || [];
+    const types = [...new Set(allRequests.map(r => r.request_type).filter(Boolean))];
+    const typeSel = document.getElementById('filter-type');
+    const cur = typeSel.value;
+    typeSel.innerHTML = '<option value="all">All types</option>' + types.map(t =>
+        `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+    ).join('');
+    if (types.includes(cur)) typeSel.value = cur;
+    currentPage = 1;
+    renderTable();
+}
+
+async function processRequest(requestId) {
+    if (!confirm('Process this request? Express interest and send your proposal message.')) return;
+    const btn = document.querySelector(`[data-process-id="${requestId}"]`);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
+    const result = await callApi(`/api/process/${encodeURIComponent(requestId)}`, { method: 'POST' });
+    if (result.success) {
+        showToast(result.message || 'Processed!', 'success');
+        await loadRequests();
+    } else {
+        showToast(result.error || 'Process failed', 'error');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> Process'; }
+    }
 }
 
 async function runScan() {
-    const result = await callApi('/api/scan');
-    if (!result.error) {
-        window.location.reload();
+    const scanBtn = document.getElementById('run-scan-btn');
+    setBtnLoading(scanBtn, true, '<i class="fas fa-spinner fa-spin"></i> Scanning...');
+    const result = await callApi('/api/scan', { method: 'POST' });
+    setBtnLoading(scanBtn, false, null, '<i class="fas fa-search"></i> Run Scan');
+    if (result.success) {
+        showToast('Scan started — refresh in a minute', 'info');
+    } else {
+        showToast(result.error || result.message || 'Scan failed', 'error');
     }
 }
+
+['filter-search', 'filter-status', 'filter-type', 'filter-per-page'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => { currentPage = 1; renderTable(); });
+});
+document.getElementById('filter-search').addEventListener('input', () => { currentPage = 1; renderTable(); });
+
+document.addEventListener('DOMContentLoaded', loadRequests);
 </script>
 {% endblock %}

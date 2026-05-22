@@ -58,17 +58,23 @@
     <div class="col-8">
         <div class="card">
             <div class="card-header">
-                <span class="card-title"><i class="fas fa-key" style="margin-right: 8px; color: var(--primary);"></i>Update A1 Token</span>
+                <span class="card-title"><i class="fas fa-sync" style="margin-right: 8px; color: var(--primary);"></i>A1 Session (Automated)</span>
             </div>
             <div class="card-body">
+                <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 16px;">
+                    Uses your Codementor email/password from onboarding. No manual copy needed in normal operation.
+                </p>
+                <button type="button" class="btn btn-primary" onclick="refreshAuth()" style="margin-bottom: 16px;">
+                    <i class="fas fa-sync"></i> Refresh A1 Token Automatically
+                </button>
                 <div class="form-group">
-                    <label class="form-label">Access Token</label>
-                    <textarea id="a1-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN here from Firefox (A1)..."></textarea>
+                    <label class="form-label">Manual fallback — Access Token</label>
+                    <textarea id="a1-token" class="form-control" rows="4" placeholder="Paste full document.cookie from Codementor (includes ACCESS_TOKEN + REFRESH_TOKEN)..."></textarea>
                 </div>
                 
                 <div style="display: flex; gap: 12px;">
                     <button type="button" class="btn btn-success" onclick="saveToken('A1')">
-                        <i class="fas fa-save"></i> Save Token
+                        <i class="fas fa-save"></i> Save Token (manual)
                     </button>
                     <button type="button" class="btn btn-secondary" onclick="document.getElementById('a1-token').value=''">
                         <i class="fas fa-trash"></i> Clear
@@ -104,19 +110,17 @@
     <div class="col-4">
         <div class="card" style="background: linear-gradient(135deg, rgba(229, 138, 0, 0.1) 0%, rgba(229, 138, 0, 0.05) 100%); border: 1px solid rgba(229, 138, 0, 0.2);">
             <div class="card-header">
-                <span class="card-title"><i class="fas fa-info-circle" style="margin-right: 8px; color: var(--warning);"></i>How to Extract</span>
+                <span class="card-title"><i class="fas fa-info-circle" style="margin-right: 8px; color: var(--warning);"></i>Auth automation</span>
             </div>
             <div class="card-body">
                 <ol style="color: #64748b; font-size: 0.875rem; line-height: 1.8; margin-left: 16px; margin-bottom: 16px;">
-                    <li>Open <strong>Firefox</strong> with logged-in Codementor</li>
-                    <li>Press <strong>F12</strong> for Developer Tools</li>
-                    <li>Go to <strong>Console</strong> tab</li>
-                    <li>Type: <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">document.cookie.match(/ACCESS_TOKEN=([^;]+)/)[1]</code></li>
-                    <li>Copy the token (starts with "eyJ...")</li>
-                    <li>Paste and <strong>Save</strong></li>
+                    <li>Complete <strong>onboarding</strong> with Codementor credentials</li>
+                    <li>Click <strong>Refresh A1 Token Automatically</strong> or run the bot (refresh runs first)</li>
+                    <li>Scheduler and bot runs keep sessions fresh via refresh cookies</li>
                 </ol>
-                <div class="badge badge-warning" style="width: 100%; justify-content: center;">
-                    <i class="fas fa-clock"></i> Tokens expire in ~4 minutes
+                <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 12px;"><strong>Manual fallback:</strong> F12 → Console → <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">document.cookie</code> (paste all — need REFRESH_TOKEN for auto-renewal)</p>
+                <div class="badge badge-success" style="width: 100%; justify-content: center;">
+                    <i class="fas fa-robot"></i> Prefer automated refresh
                 </div>
             </div>
         </div>
@@ -124,6 +128,17 @@
 </div>
 
 <script>
+async function refreshAuth() {
+    try {
+        const response = await fetch('/api/auth/refresh', { method: 'POST' });
+        const result = await response.json();
+        alert(result.message || (result.success ? 'Tokens refreshed' : result.error));
+        if (result.success) location.reload();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
 async function saveToken(account) {
     const token = document.getElementById(account.toLowerCase() + '-token').value.trim();
     if (!token) {

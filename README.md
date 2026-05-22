@@ -1,149 +1,80 @@
-# Codementor.io Automation Bot - Hybrid Mode
+# CMBOTv2 — Codementor Auth Automation
 
-This Python bot automates scanning and responding to codementor.io requests using a hybrid approach: **API for scanning** and **Browser for processing**.
+Automates Codementor.io request scanning (A2) and interest messaging (A1) using API tokens. Credentials from onboarding drive **automatic login and token refresh** — manual cookie copy is only a fallback.
 
-## How It Works
+## Project layout
 
-1. **Account A2 (Scanner - API)**: Uses extracted auth tokens to scan open requests via REST API
-2. **Account A1 (Interactor - Browser)**: Uses browser automation to express interest and send messages
-3. **Smart Comparison**: Compares A2's found requests with A1's already-processed requests via API
-4. **Processing**: For each missing/new request:
-   - Opens request page in browser
-   - Clicks "Get Started" / "Express Interest"
-   - Types predefined message
-   - Clicks "Message" button and sends message
-
-## Quick Start
-
-```bash
-# 1. Ensure dependencies are installed
-.venv/bin/pip install aiohttp playwright
-.venv/bin/playwright install chromium
-
-# 2. Copy config.example.json to config.json and fill in your credentials
-cp config.example.json config.json
-
-# 3. Extract fresh tokens (see Token Extraction section)
-
-# 4. Run the bot
-.venv/bin/python codementor_bot_hybrid.py
+```
+CMBOTv2/
+├── cmbot/                    # Core package
+│   ├── auth/                 # Token load/save, refresh, Playwright login
+│   │   ├── tokens.py
+│   │   └── service.py        # TokenAuthService
+│   ├── api/                  # Codementor REST client
+│   ├── bot/
+│   │   └── hybrid.py         # Scan + process workflow
+│   ├── storage/              # JSON persistence
+│   └── paths.py              # Paths & env (USER_ID, etc.)
+├── scripts/
+│   ├── refresh_auth.py       # CLI: refresh tokens from credentials
+│   └── run_bot.py            # CLI: one bot cycle
+├── app.py                    # Multi-user Flask UI (PM2 entry)
+├── codementor_bot_hybrid.py  # Shim → cmbot.bot.hybrid
+├── config.json               # Global A2 + defaults (gitignored)
+├── session_tokens.json       # Global A2 tokens (gitignored)
+├── user_data/                # Per-user tokens, requests, logs
+└── templates/                # Web UI
 ```
 
-## Token Extraction
+## Quick start
 
-Tokens expire after ~4 minutes. You need fresh tokens before each run.
+```bash
+cd /root/CMBOTv2
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/playwright install chromium
 
-**Quick Method - Manual:**
-1. In Firefox (A1), press F12 → Console
-2. Type: `document.cookie.match(/ACCESS_TOKEN=([^;]+)/)[1]`
-3. Copy the token value
-4. Repeat for Chrome (A2)
-5. Edit `session_tokens.json` and paste tokens
+cp config.example.json config.json   # fill A2 scanner credentials
+cp session_tokens.example.json session_tokens.json
 
-## Project Files
+# Refresh tokens automatically (uses email/password in config.json)
+.venv/bin/python scripts/refresh_auth.py
 
-| File | Purpose |
-|------|---------|
-| `codementor_bot_hybrid.py` | Main bot - API scanning + Browser processing |
-| `config.json` | Account credentials and message |
-| `session_tokens.json` | Auth tokens for API access |
-| `requests_db.json` | Database of processed requests |
-| `requirements.txt` | Python dependencies |
+# Run one automation cycle
+.venv/bin/python scripts/run_bot.py
+
+# Or start the web UI (auto-refresh before each bot run)
+pm2 start ecosystem.config.json
+```
+
+## Auth flow (automated)
+
+1. **Onboarding** — user enters Codementor A1 email/password; the app triggers a background token fetch.
+2. **Before each bot run** — `TokenAuthService` validates tokens, refreshes via `REFRESH_TOKEN`, or logs in with stored credentials (Playwright).
+3. **Scheduler** — same auto-refresh runs on each interval.
+4. **Manual fallback** — Tokens page or `POST /api/auth/refresh` if automation fails (2FA, captcha).
 
 ## Configuration
 
-Edit `config.json`:
+`config.json` (global):
 
 ```json
 {
-  "account_a2": {
-    "email": "your_scanner_account@gmail.com",
-    "password": "your_a2_password"
-  },
-  "account_a1": {
-    "email": "your_main_account@gmail.com",
-    "password": "your_a1_password"
-  },
-  "message": "Your custom proposal message here",
-  "check_interval_minutes": 5,
-  "headless_a2": true,
-  "headless_a1": false
+  "account_a2": { "email": "...", "password": "..." },
+  "message": "Your proposal text",
+  "check_interval_minutes": 5
 }
 ```
 
-## Test UI
+Per-user A1 credentials live in `users.json` / `user_data/{id}_data.json` after onboarding.
 
-A web-based testing interface is included for manual testing and debugging:
+## PM2
 
 ```bash
-# Run the UI server
-python test_ui.py
-
-# Open http://127.0.0.1:5000 in your browser
+pm2 start ecosystem.config.json   # runs app.py on port 5030
 ```
 
-### UI Features:
-- **Dashboard** - Status overview, quick actions, live results
-- **Test Login** - Verify both accounts can log in
-- **Run Scan** - Manually trigger a request scan
-- **View Requests** - Browse all stored requests in a table
-- **Process Requests** - Manually process individual or all new requests
-- **View Logs** - Real-time log monitoring with auto-refresh
-- **Configuration** - Web form to edit config.json
+## Security
 
-### UI Pages:
-- `/` - Dashboard with stats and controls
-- `/requests` - Stored requests table with actions
-- `/logs` - Live log viewer
-- `/config` - Edit settings form
-
-## Running as a Background Job
-
-### On macOS/Linux (using cron):
-```bash
-# Edit crontab
-crontab -e
-
-# Add line to run every 10 minutes:
-*/10 * * * * cd /Users/ariyoayomikun/Downloads/CMBOTv2/codementor && /usr/bin/python3 run.py --once >> bot.log 2>&1
-```
-
-### Using screen/tmux (continuous mode):
-```bash
-# Start in background session
-tmux new-session -d -s codementor_bot 'python /Users/ariyoayomikun/Downloads/CMBOTv2/codementor/codementor_bot.py'
-
-# Reattach to see output
-tmux attach -t codementor_bot
-
-# Detach with Ctrl+B then D
-```
-
-## Files
-
-- `codementor_bot.py` - Main bot with all logic
-- `run.py` - Convenient runner script
-- `config.json` - Configuration (credentials, message, interval)
-- `requests_db.json` - Auto-generated request database
-- `codementor_bot.log` - Runtime logs
-- `requirements.txt` - Python dependencies
-
-## Troubleshooting
-
-If login fails:
-- Check credentials in config.json
-- Look at `login_error.png` or `login_debug.png` screenshots
-- Codementor may require 2FA - you'll need to complete it manually first
-
-If request parsing fails:
-- The site layout may have changed
-- Check `requests_error.png` screenshot
-- The bot uses multiple selector strategies for resilience
-
-## Security Notes
-
-- Keep your `config.json` secure (contains passwords)
-- Don't commit it to git
-- Run in a private environment
-# CM-Bot
-# CM-Bot
+- Never commit `config.json`, `session_tokens.json`, `users.json`, or `user_data/`.
+- Rotate admin password in `app.py` (`get_admin_password`).

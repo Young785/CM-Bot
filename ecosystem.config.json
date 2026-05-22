@@ -6,7 +6,9 @@
       "args": "app.py",
       "cwd": "/root/CMBOTv2",
       "env": {
-        "FLASK_PORT": "5030"
+        "FLASK_PORT": "5030",
+        "FLASK_DEBUG": "0",
+        "SESSION_COOKIE_SECURE": "1"
       },
       "instances": 1,
       "autorestart": true,

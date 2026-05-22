@@ -5,6 +5,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codementor Bot - Admin Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+    window.callApi = async function(url, options = {}) {
+        const opts = {
+            method: options.method || 'GET',
+            headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        };
+        if (options.body !== undefined) {
+            opts.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+        }
+        try {
+            const res = await fetch(url, opts);
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success === undefined && !data.error) {
+                if (Array.isArray(data.requests)) {
+                    data.success = true;
+                } else if (url.includes('/api/requests') && typeof data === 'object' && data !== null) {
+                    var items = [];
+                    for (var k in data) {
+                        if (Object.prototype.hasOwnProperty.call(data, k) && typeof data[k] === 'object') {
+                            var r = data[k];
+                            items.push({
+                                request_id: k,
+                                random_key: r.random_key || k,
+                                title: r.title || 'Untitled',
+                                author: r.author || '',
+                                budget: r.budget || '',
+                                request_type: r.request_type || '',
+                                tags: r.tags || [],
+                                interested_count: r.interested_count || 0,
+                                processed_at: r.processed_at || '',
+                                url: r.url || '',
+                                description: (r.description || '').slice(0, 200)
+                            });
+                        }
+                    }
+                    data = { success: true, requests: items, total: items.length };
+                }
+            }
+            if (res.status === 401) {
+                window.location.href = '/?next=' + encodeURIComponent(window.location.pathname);
+                return { success: false, error: 'Session expired — redirecting to login' };
+            }
+            if (!res.ok && data.success !== true && !data.error) {
+                data.error = data.message || 'HTTP ' + res.status;
+                data.success = false;
+            }
+            return data;
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    };
+
+    window.showToast = function(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.className = 'toast toast-' + type;
+        const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+        const color = type === 'success' ? '#2ca87f' : type === 'error' ? '#dc2626' : '#3ec9d7';
+        toast.innerHTML = '<i class="fas fa-' + icon + '" style="color:' + color + ';"></i><span style="font-weight:500;color:#1e293b;">' + message + '</span>';
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 3500);
+    };
+
+    window.setBtnLoading = function(btn, loading, loadingHtml, idleHtml) {
+        if (!btn) return;
+        btn.disabled = !!loading;
+        if (loading) {
+            btn.dataset.idleHtml = btn.dataset.idleHtml || btn.innerHTML;
+            btn.innerHTML = loadingHtml || '<i class="fas fa-spinner fa-spin"></i>';
+        } else {
+            btn.innerHTML = idleHtml || btn.dataset.idleHtml || btn.innerHTML;
+        }
+    };
+    </script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -459,8 +532,10 @@
             padding: 20px;
             font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
             font-size: 0.8rem;
-            max-height: 400px;
+            max-height: 420px;
             overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
             color: #94a3b8;
             line-height: 1.6;
         }
@@ -536,6 +611,11 @@
                 <i class="fas fa-users"></i>
                 <span>Clients</span>
             </a>
+            <a href="/messages" class="nav-item {% if request.endpoint == 'umessages_page' %}active{% endif %}">
+                <i class="fas fa-envelope"></i>
+                <span>Messages</span>
+                <span id="nav-unread-badge" class="badge badge-danger" style="margin-left: auto; display: none; font-size: 0.65rem; padding: 2px 8px;"></span>
+            </a>
             
             <div class="nav-section">Configuration</div>
             <a href="/tokens" class="nav-item {% if request.endpoint == 'tokens' %}active{% endif %}">
@@ -584,24 +664,19 @@
     {% block auth_content %}{% endblock %}
     {% endif %}
     
+    {% block page_scripts %}{% endblock %}
+    {% if current_user.is_authenticated %}
     <script>
-        function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            
-            const icon = type === 'success' ? 'check-circle' : 
-                        type === 'error' ? 'exclamation-circle' : 'info-circle';
-            const color = type === 'success' ? '#2ca87f' : 
-                         type === 'error' ? '#dc2626' : '#3ec9d7';
-            
-            toast.innerHTML = `
-                <i class="fas fa-${icon}" style="color: ${color};"></i>
-                <span style="font-weight: 500; color: #1e293b;">${message}</span>
-            `;
-            
-            document.body.appendChild(toast);
-            setTimeout(() => toast.remove(), 3000);
+    document.addEventListener('DOMContentLoaded', async function() {
+        var badge = document.getElementById('nav-unread-badge');
+        if (!badge || typeof callApi !== 'function') return;
+        var data = await callApi('/api/messages/unread-count');
+        if (data.unread_count > 0) {
+            badge.textContent = data.unread_count;
+            badge.style.display = 'inline-flex';
         }
+    });
     </script>
+    {% endif %}
 </body>
 </html>
