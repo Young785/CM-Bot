@@ -10,5 +10,18 @@
   "message": "Your proposal message here",
   "check_interval_minutes": 5,
   "headless_a2": true,
-  "headless_a1": false
+  "headless_a1": false,
+  "reports": {
+    "enabled": true,
+    "to": "ayomikunariyo@gmail.com",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "your_sender@gmail.com",
+    "smtp_password": "your_gmail_app_password",
+    "use_a1_password": false,
+    "timezone": "Africa/Lagos",
+    "daily_hour": 8,
+    "weekly_weekday": 0,
+    "monthly_day": 1
+  }
 }

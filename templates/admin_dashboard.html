@@ -1,302 +1,213 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Codementor Bot</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f4f7f6;
-            color: #1e293b;
-            line-height: 1.6;
-        }
-        
-        .top-bar {
-            background: linear-gradient(135deg, #1e293b 0%, #7267ef 100%);
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .top-bar h1 {
-            font-size: 1.5rem;
-        }
-        
-        .top-bar .badge {
-            background: #e74c3c;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 30px;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 24px;
-            border-radius: 16px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-            border: 1px solid #e2e8f0;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 4px;
-            height: 100%;
-            background: #7267ef;
-        }
-        
-        .stat-card h3 {
-            font-size: 0.875rem;
-            color: #64748b;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .stat-card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #1e293b;
-        }
-        
-        .section {
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 30px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-            border: 1px solid #e2e8f0;
-        }
-        
-        .section h2 {
-            margin-bottom: 20px;
-            color: #1e293b;
-            font-size: 1.125rem;
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        th, td {
-            padding: 16px;
-            text-align: left;
-            border-bottom: 1px solid #f1f5f9;
-        }
-        
-        th {
-            background: #f8fafc;
-            font-weight: 600;
-            color: #64748b;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        tr:hover {
-            background: #f8fafc;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-        
-        .status-active {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .status-pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-        
-        .token-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
-        }
-        
-        .token-valid {
-            background: #28a745;
-        }
-        
-        .token-invalid {
-            background: #dc3545;
-        }
-        
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .btn-primary {
-            background: #7267ef;
-            color: white;
-        }
-        
-        .btn-danger {
-            background: #dc2626;
-            color: white;
-        }
-        
-        .btn:hover {
-            opacity: 0.9;
-        }
-        
-        .back-link {
-            margin-top: 20px;
-        }
-        
-        .back-link a {
-            color: #7267ef;
-            text-decoration: none;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-    </style>
-</head>
-<body>
-    <div class="top-bar">
-        <h1>🔐 Admin Dashboard</h1>
-        <div style="display: flex; align-items: center; gap: 20px;">
-            <span class="badge">ADMIN</span>
-            <a href="/admin/logout" style="color: white; text-decoration: none;">Logout</a>
+{% extends "base.html" %}
+
+{% block page_title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div style="margin-bottom: 24px; padding: 16px 20px; border-radius: 12px; background: {% if category == 'success' %}rgba(44, 168, 127, 0.1){% elif category == 'error' %}rgba(220, 38, 38, 0.1){% else %}rgba(62, 201, 215, 0.1){% endif %}; border-left: 4px solid {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; color: {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; font-size: 0.875rem;">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="stats-grid" style="margin-bottom: 24px;">
+    <div class="stat-card primary">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value">{{ stats.total_users }}</div>
+            </div>
+            <div class="stat-icon primary"><i class="fas fa-users"></i></div>
         </div>
     </div>
-    
-    <div class="container">
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Total Users</h3>
-                <div class="value">{{ stats.total_users }}</div>
+    <div class="stat-card success">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Active Bots</div>
+                <div class="stat-value">{{ stats.active_bots }}</div>
             </div>
-            <div class="stat-card">
-                <h3>Active Bots</h3>
-                <div class="value">{{ stats.active_bots }}</div>
+            <div class="stat-icon success"><i class="fas fa-robot"></i></div>
+        </div>
+    </div>
+    <div class="stat-card info">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">{{ stats.total_requests }}</div>
             </div>
-            <div class="stat-card">
-                <h3>Total Requests Processed</h3>
-                <div class="value">{{ stats.total_requests }}</div>
+            <div class="stat-icon info"><i class="fas fa-list"></i></div>
+        </div>
+    </div>
+    <div class="stat-card warning">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Onboarded Users</div>
+                <div class="stat-value">{{ stats.onboarded_users }}</div>
             </div>
-            <div class="stat-card">
-                <h3>Onboarded Users</h3>
-                <div class="value">{{ stats.onboarded_users }}</div>
+            <div class="stat-icon warning"><i class="fas fa-check-circle"></i></div>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-satellite-dish" style="margin-right: 8px; color: var(--info);"></i>Shared A2 Scanner (all users)</span>
+        <button type="button" class="btn btn-sm btn-primary" onclick="refreshA2Scan()">
+            <i class="fas fa-sync"></i> Scan now
+        </button>
+    </div>
+    <div class="card-body">
+        <p style="color: #64748b; font-size: 0.875rem; margin-bottom: 12px;">
+            One A2 scan is shared by every user account. User bots only refresh their own A1 token and process requests from this cache.
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase;">A2 Token</div>
+                <span class="badge {{ 'badge-success' if a2_scan.has_a2_token else 'badge-danger' }}">
+                    {{ 'Configured' if a2_scan.has_a2_token else 'Missing' }}
+                </span>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Cached requests</div>
+                <strong>{{ a2_scan.count }}</strong>
+            </div>
+            <div>
+                <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Last scan</div>
+                <strong>{{ a2_scan.scanned_at[:19] if a2_scan.scanned_at else 'Never' }}</strong>
+                {% if a2_scan.scanned_at and not a2_scan.fresh %}
+                <span class="badge badge-warning" style="margin-left: 6px;">Stale</span>
+                {% elif a2_scan.fresh %}
+                <span class="badge badge-success" style="margin-left: 6px;">Fresh</span>
+                {% endif %}
             </div>
         </div>
-        
-        <div class="section">
-            <h2>👥 All Users</h2>
-            {% if users %}
-            <table>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-user-plus" style="margin-right: 8px; color: var(--primary);"></i>Create User Account</span>
+    </div>
+    <div class="card-body">
+        <form action="/admin/users/create" method="POST">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; align-items: end;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Email</label>
+                    <input type="email" name="email" class="form-control" placeholder="user@example.com" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Password</label>
+                    <input type="password" name="password" class="form-control" placeholder="Min 6 characters" required minlength="6">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label class="form-label">Confirm Password</label>
+                    <input type="password" name="confirm_password" class="form-control" placeholder="Confirm password" required minlength="6">
+                </div>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-plus"></i> Create Account</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-users" style="margin-right: 8px; color: var(--primary);"></i>All Users</span>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        {% if users %}
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
                 <thead>
-                    <tr>
-                        <th>Email</th>
-                        <th>A1 Account</th>
-                        <th>A1 Token</th>
-                        <th>Requests</th>
-                        <th>Status</th>
-                        <th>Created</th>
-                        <th>Actions</th>
+                    <tr style="background: #f8fafc;">
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Email</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">A1 Account</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">A1 Token</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Requests</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Status</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Created</th>
+                        <th style="padding: 14px 16px; text-align: left; font-size: 0.75rem; color: #64748b; text-transform: uppercase;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for user in users %}
-                    <tr>
-                        <td>{{ user.email }}</td>
-                        <td>{{ user.a1_email or 'Not set' }}</td>
-                        <td>
-                            <span class="token-dot {{ 'token-valid' if user.has_a1_token else 'token-invalid' }}"></span>
-                            {{ 'Valid' if user.has_a1_token else 'Missing' }}
+                    <tr style="border-top: 1px solid #f1f5f9;">
+                        <td style="padding: 14px 16px;">{{ user.email }}</td>
+                        <td style="padding: 14px 16px;">{{ user.a1_email or 'Not set' }}</td>
+                        <td style="padding: 14px 16px;">
+                            {% if user.has_a1_token %}
+                            <span class="badge badge-success">Valid</span>
+                            {% else %}
+                            <span class="badge badge-danger">Missing</span>
+                            {% endif %}
                         </td>
-                        <td>{{ user.request_count }}</td>
-                        <td>
-                            <span class="status-badge {{ 'status-active' if user.onboarding_complete else 'status-pending' }}">
-                                {{ 'Active' if user.onboarding_complete else 'Pending' }}
-                            </span>
+                        <td style="padding: 14px 16px;">{{ user.request_count }}</td>
+                        <td style="padding: 14px 16px;">
+                            {% if user.onboarding_complete %}
+                            <span class="badge badge-success">Active</span>
+                            {% else %}
+                            <span class="badge badge-warning">Pending</span>
+                            {% endif %}
                         </td>
-                        <td>{{ user.created_at[:10] if user.created_at else 'Unknown' }}</td>
-                        <td>
-                            <button class="btn btn-primary" onclick="viewUser('{{ user.id }}')">View</button>
+                        <td style="padding: 14px 16px;">{{ user.created_at[:10] if user.created_at else 'Unknown' }}</td>
+                        <td style="padding: 14px 16px;">
+                            <button type="button" class="btn btn-sm btn-primary" onclick="viewUser('{{ user.id }}')">View</button>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-            {% else %}
-            <div class="empty-state">
-                <p>No users registered yet.</p>
-            </div>
-            {% endif %}
         </div>
-        
-        <div class="section">
-            <h2>⚙️ System Configuration</h2>
-            <table>
-                <tr>
-                    <td><strong>A2 Email (Scanner)</strong></td>
-                    <td>{{ global_config.get('account_a2', {}).get('email', 'Not configured') }}</td>
-                </tr>
-                <tr>
-                    <td><strong>Check Interval</strong></td>
-                    <td>{{ global_config.get('check_interval_minutes', 5) }} minutes</td>
-                </tr>
-                <tr>
-                    <td><strong>Default Message</strong></td>
-                    <td>{{ global_config.get('message', 'Not set')[:50] }}...</td>
-                </tr>
-            </table>
-        </div>
-        
-        <div class="back-link">
-            <a href="/">← Back to Home</a>
-        </div>
+        {% else %}
+        <div style="text-align: center; padding: 48px 20px; color: #64748b;">No users registered yet.</div>
+        {% endif %}
     </div>
-    
-    <script>
-        function viewUser(userId) {
-            window.open('/admin/user/' + userId, '_blank');
-        }
-    </script>
-</body>
-</html>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title"><i class="fas fa-cog" style="margin-right: 8px; color: var(--primary);"></i>System Configuration</span>
+    </div>
+    <div class="card-body">
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px 0; font-weight: 600;">A2 Email (Scanner)</td>
+                <td style="padding: 12px 0;">{{ global_config.get('account_a2', {}).get('email', 'Not configured') }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 12px 0; font-weight: 600;">Check Interval</td>
+                <td style="padding: 12px 0;">{{ global_config.get('check_interval_minutes', 5) }} minutes</td>
+            </tr>
+            <tr>
+                <td style="padding: 12px 0; font-weight: 600;">Default Message</td>
+                <td style="padding: 12px 0;">{{ (global_config.get('message', 'Not set') or 'Not set')[:80] }}{% if global_config.get('message') and global_config.get('message')|length > 80 %}...{% endif %}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+function viewUser(userId) {
+    window.location.href = '/admin/user/' + userId;
+}
+
+async function refreshA2Scan() {
+    const btn = event.target.closest('button');
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/api/admin/a2/scan', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message || data.error || 'Done');
+        if (data.success) location.reload();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

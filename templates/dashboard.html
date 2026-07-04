@@ -62,7 +62,7 @@
         </a>
     </div>
     
-    {% if session.is_admin %}
+    {% if is_admin %}
     <!-- A2 Token -->
     <div class="stat-card {% if token_status.A2.has_token %}success{% else %}danger{% endif %}">
         <div class="stat-header">

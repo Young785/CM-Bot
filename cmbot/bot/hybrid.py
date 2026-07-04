@@ -15,7 +15,7 @@ from cmbot.api.client import CM_HEADERS, CodementorAPI
 from cmbot.api.models import Request
 from cmbot.auth.service import TokenAuthService
 from cmbot.auth.tokens import load_tokens
-from cmbot.paths import CONFIG_FILE, REQUESTS_DB, USER_ID
+from cmbot.paths import CONFIG_FILE, REQUESTS_DB, USER_ID, IS_ADMIN
 from cmbot.storage.json_store import load_json
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -128,12 +128,30 @@ class CodementorBot:
         a2_email = self.config.get("a2_email", "")
         a1_email = self.config.get("a1_email", "")
 
-        logger.info("\n[1/3] Scanning with A2...")
-        a2_requests = await self.scan_with_retry("A2", a2_email)
-        if a2_requests is None:
-            logger.error("A2 scan failed")
-            return
-        logger.info("Found %s requests from A2", len(a2_requests))
+        use_shared = os.environ.get("USE_SHARED_A2_SCAN", "").lower() in ("1", "true", "yes")
+        if USER_ID and (use_shared or not IS_ADMIN):
+            from cmbot.bot.shared_scan import load_shared_scan, load_stale_shared_scan
+
+            logger.info("\n[1/3] Loading shared A2 scan (admin scanner)...")
+            a2_requests, scanned_at = load_shared_scan(max_age_minutes=9999)
+            if not a2_requests:
+                a2_requests, scanned_at = load_stale_shared_scan()
+            if not a2_requests:
+                logger.error("Shared A2 scan unavailable — admin must refresh scanner cache first")
+                return
+            logger.info("Using %s requests from shared A2 cache (scanned %s)", len(a2_requests), scanned_at or "?")
+        else:
+            logger.info("\n[1/3] Scanning with A2...")
+            a2_requests = await self.scan_with_retry("A2", a2_email)
+            if a2_requests is None:
+                logger.error("A2 scan failed")
+                return
+            logger.info("Found %s requests from A2", len(a2_requests))
+            if USER_ID and IS_ADMIN:
+                from cmbot.bot.shared_scan import save_shared_scan
+
+                save_shared_scan(a2_requests)
+                logger.info("Updated shared A2 cache for all users")
 
         logger.info("\n[2/3] Scanning A1 interests...")
         a1_requests = await self.scan_with_retry("A1", a1_email)

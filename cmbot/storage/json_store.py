@@ -3,29 +3,44 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 from pathlib import Path
 from typing import Any
 
 
-def load_json(filepath: Path, default: Any = None) -> Any:
+def load_json(filepath: Path, default: Any = None, *, retries: int = 3) -> Any:
     if default is None:
         default = {}
     if not filepath.exists():
         return default
-    try:
-        content = filepath.read_text(encoding="utf-8").strip()
-        if not content:
-            return default
-        return json.loads(content)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"Warning: Could not load {filepath}: {e}")
-        return default
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        try:
+            content = filepath.read_text(encoding="utf-8").strip()
+            if not content:
+                return default
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            last_error = e
+            if attempt < retries - 1:
+                time.sleep(0.05)
+                continue
+        except OSError as e:
+            last_error = e
+            break
+    print(f"Warning: Could not load {filepath}: {last_error}")
+    return default
 
 
 def save_json(filepath: Path, data: Any) -> None:
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    with open(filepath, "w", encoding="utf-8") as f:
+    tmp = filepath.with_suffix(filepath.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    tmp.replace(filepath)
 
 
 def load_json_dict(path: Path) -> dict:

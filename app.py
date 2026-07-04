@@ -20,6 +20,15 @@ import time
 import aiohttp
 
 from cmbot.auth import TokenAuthService, load_merged_tokens
+from cmbot.auth.password_reset import (
+    consume_reset_token,
+    create_reset_token,
+    peek_reset_token,
+    send_reset_email,
+)
+from cmbot.bot.shared_scan import ensure_shared_a2_scan, load_shared_scan
+from cmbot.reports.scheduler import get_report_scheduler
+from cmbot.reports.emailer import get_report_settings
 from cmbot.users import get_user_credentials
 from cmbot.storage.json_store import (
     load_json as load_json_file,
@@ -59,16 +68,17 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "1").lower() in ("1", "true", "yes"),
     REMEMBER_COOKIE_DURATION=timedelta(days=30),
     REMEMBER_COOKIE_HTTPONLY=True,
-    REMEMBER_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "1").lower() in ("1", "true", "yes"),
+    REMEMBER_COOKIE_`SECURE=os.environ.get("SESSION_COOKIE_SECURE", "1").lower() in ("1", "true", "yes"),
 )
 
-# File paths
-TOKENS_FILE = Path("session_tokens.json")
-CONFIG_FILE = Path("config.json")
-REQUESTS_DB = Path("requests_db.json")
-LOG_FILE = Path("bot_ui.log")
-USERS_FILE = Path("users.json")
-USER_DATA_DIR = Path("user_data")
+# File paths (absolute — scheduler threads must not depend on process cwd)
+ROOT = Path(__file__).resolve().parent
+TOKENS_FILE = ROOT / "session_tokens.json"
+CONFIG_FILE = ROOT / "config.json"
+REQUESTS_DB = ROOT / "requests_db.json"
+LOG_FILE = ROOT / "bot_ui.log"
+USERS_FILE = ROOT / "users.json"
+USER_DATA_DIR = ROOT / "user_data"
 
 # Create user data directory
 USER_DATA_DIR.mkdir(exist_ok=True)
@@ -78,6 +88,7 @@ bot_processes = {}  # user_id -> {process, running, status, message}
 bot_locks = defaultdict(threading.Lock)
 bot_schedulers = {}  # user_id -> BackgroundScheduler
 global_bot_status = {"running": False, "message": "Ready"}
+a2_scan_lock = threading.Lock()
 
 
 def reconcile_bot_process(user_id: str) -> None:
@@ -230,6 +241,51 @@ def append_user_log(user_id: str, message: str) -> None:
         f.flush()
 
 
+def _filter_log_for_user(log_content: str, is_admin: bool) -> str:
+    if is_admin or not log_content:
+        return log_content
+    filtered_lines = []
+    for line in log_content.split("\n"):
+        if not line.strip():
+            continue
+        line_lower = line.lower()
+        if any(skip in line_lower for skip in [
+            "token extracted:", "access_token=", "refresh_token=",
+            "persistent context", "localstorage", "scanning with a2",
+            " requests from a2", "a2 scan", "a2 token", "auto-refreshing: a2",
+        ]):
+            continue
+        filtered_lines.append(line)
+    return "\n".join(filtered_lines) if filtered_lines else log_content
+
+
+def _current_user_is_admin() -> bool:
+    """True when the logged-in user has admin role in users.json."""
+    if not current_user.is_authenticated:
+        return False
+    users = load_json_file(USERS_FILE, {})
+    return bool(users.get(current_user.id, {}).get("is_admin"))
+
+
+def _has_admin_access() -> bool:
+    """Admin portal session or admin user account."""
+    if session.get("is_admin"):
+        return True
+    return _current_user_is_admin()
+
+
+def _require_admin_user():
+    return _has_admin_access()
+
+
+@app.context_processor
+def inject_admin():
+    return {
+        "is_admin": _current_user_is_admin(),
+        "has_admin_access": _has_admin_access(),
+    }
+
+
 def _bot_env_for_user(user_id: str, is_admin: bool) -> dict:
     env = os.environ.copy()
     env["USER_ID"] = user_id
@@ -340,10 +396,11 @@ def execute_bot_cycle(user_id: str, log_header: str | None = None) -> tuple[bool
             skip_refresh = _tokens_recently_validated(user_id)
             if skip_refresh:
                 append_user_log(user_id, "Tokens recently validated — skipping pre-run refresh.")
-                token_ok = {a: True for a in (["A1", "A2"] if is_admin else ["A1"])}
+                token_ok = {"A1": True}
             else:
                 append_user_log(user_id, "Checking Codementor token validity...")
-                token_ok = _quick_token_check(user_id, is_admin)
+                token_ok = _quick_token_check(user_id, is_admin=False)
+                token_ok.pop("A2", None)
                 append_user_log(
                     user_id,
                     "Token status: "
@@ -354,7 +411,7 @@ def execute_bot_cycle(user_id: str, log_header: str | None = None) -> tuple[bool
                 if all(token_ok.values()):
                     _mark_tokens_validated(user_id)
 
-            to_refresh = [a for a, ok in token_ok.items() if not ok]
+            to_refresh = [a for a, ok in token_ok.items() if not ok and a == "A1"]
             user_tokens = load_json_file(USER_DATA_DIR / f"{user_id}_tokens.json", {})
 
             if to_refresh:
@@ -387,6 +444,16 @@ def execute_bot_cycle(user_id: str, log_header: str | None = None) -> tuple[bool
                     append_user_log(user_id, "Skipping A1 browser refresh — add REFRESH_TOKEN via Tokens page.")
             else:
                 append_user_log(user_id, "Tokens valid — skipping browser refresh.")
+
+            info["status"] = {"running": True, "message": "Refreshing shared A2 scan..."}
+            with a2_scan_lock:
+                scan_ok, scan_msg = ensure_shared_a2_scan()
+            append_user_log(user_id, f"[Shared A2] {scan_msg}")
+            if not scan_ok:
+                info["status"] = {"running": False, "message": scan_msg}
+                return False, "error"
+
+            env["USE_SHARED_A2_SCAN"] = "1"
 
             info["status"] = {"running": True, "message": "Running bot..."}
             append_user_log(user_id, "Starting bot subprocess...")
@@ -510,6 +577,164 @@ def get_user_config(user_id):
     }
     return config
 
+
+def _create_user_account(email: str, password: str) -> tuple[str | None, str | None]:
+    """Create a new user account. Returns (user_id, error_message)."""
+    email = email.strip().lower()
+    if not email or not password:
+        return None, 'Email and password are required'
+    if len(password) < 6:
+        return None, 'Password must be at least 6 characters'
+
+    users = load_json_file(USERS_FILE, {})
+    for user_data in users.values():
+        if user_data.get('email', '').lower() == email:
+            return None, 'Email already registered'
+
+    user_id = secrets.token_hex(8)
+    users[user_id] = {
+        'email': email,
+        'password_hash': generate_password_hash(password),
+        'created_at': datetime.now().isoformat(),
+        'a1_email': None,
+        'a1_password': None,
+        'message': None,
+        'onboarding_complete': False,
+    }
+    save_json_file(USERS_FILE, users)
+
+    save_json_file(USER_DATA_DIR / f"{user_id}_data.json", {
+        'user_id': user_id,
+        'email': email,
+        'a1_email': None,
+        'a1_password': None,
+        'message': None,
+        'created_at': datetime.now().isoformat(),
+    })
+    save_json_file(USER_DATA_DIR / f"{user_id}_requests.json", {})
+    save_json_file(USER_DATA_DIR / f"{user_id}_tokens.json", {})
+    return user_id, None
+
+
+def _delete_user_account(user_id: str) -> tuple[bool, str]:
+    """Remove user and all associated files."""
+    users = load_json_file(USERS_FILE, {})
+    if user_id not in users:
+        return False, "User not found"
+
+    if current_user.is_authenticated and current_user.id == user_id:
+        return False, "You cannot delete your own account while logged in"
+
+    admins = [uid for uid, u in users.items() if u.get("is_admin")]
+    if users[user_id].get("is_admin") and len(admins) <= 1:
+        return False, "Cannot delete the only admin account"
+
+    if user_id in bot_schedulers and bot_schedulers[user_id].running:
+        bot_schedulers[user_id].stop()
+        bot_schedulers.pop(user_id, None)
+
+    reconcile_bot_process(user_id)
+    proc = bot_processes.get(user_id, {}).get("process")
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+
+    bot_processes.pop(user_id, None)
+    bot_locks.pop(user_id, None)
+
+    del users[user_id]
+    save_json_file(USERS_FILE, users)
+
+    for pattern in (
+        f"{user_id}_data.json",
+        f"{user_id}_requests.json",
+        f"{user_id}_tokens.json",
+        f"{user_id}_bot_config.json",
+        f"{user_id}.log",
+    ):
+        path = USER_DATA_DIR / pattern
+        if path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    return True, "User deleted"
+
+
+def _update_user_account(user_id: str, form) -> tuple[bool, str]:
+    """Apply admin edits to a user record."""
+    users = load_json_file(USERS_FILE, {})
+    if user_id not in users:
+        return False, "User not found"
+
+    record = users[user_id]
+
+    if form.get("permissions_only") == "1":
+        record["onboarding_complete"] = form.get("onboarding_complete") == "on"
+        record["is_admin"] = form.get("is_admin") == "on"
+        record["scheduler_enabled"] = form.get("scheduler_enabled") == "on"
+        try:
+            interval = int(form.get("scheduler_interval", record.get("scheduler_interval", 5)))
+            record["scheduler_interval"] = max(1, min(60, interval))
+        except (TypeError, ValueError):
+            pass
+    else:
+        email = form.get("email", "").strip().lower()
+        if not email:
+            return False, "Email is required"
+        for uid, data in users.items():
+            if uid != user_id and data.get("email", "").lower() == email:
+                return False, "Email already in use by another account"
+        record["email"] = email
+        record["a1_email"] = form.get("a1_email", "").strip() or None
+        record["a1_password"] = form.get("a1_password", "") or None
+        record["message"] = form.get("message", "").strip() or None
+        try:
+            interval = int(form.get("scheduler_interval", record.get("scheduler_interval", 5)))
+            record["scheduler_interval"] = max(1, min(60, interval))
+        except (TypeError, ValueError):
+            pass
+
+        new_password = form.get("new_password", "")
+        if new_password:
+            if len(new_password) < 6:
+                return False, "New password must be at least 6 characters"
+            record["password_hash"] = generate_password_hash(new_password)
+
+    email = record.get("email", "")
+
+    if record.get("is_admin") is False and form.get("permissions_only") == "1":
+        admins = [uid for uid, u in users.items() if u.get("is_admin")]
+        if user_id in admins and len(admins) <= 1:
+            return False, "Cannot remove admin role from the only admin account"
+
+    save_json_file(USERS_FILE, users)
+
+    data_file = USER_DATA_DIR / f"{user_id}_data.json"
+    data = load_json_file(data_file, {})
+    data.update({
+        "user_id": user_id,
+        "email": email,
+        "a1_email": record.get("a1_email"),
+        "a1_password": record.get("a1_password"),
+        "message": record.get("message"),
+        "onboarding_complete": record.get("onboarding_complete"),
+        "scheduler_enabled": record.get("scheduler_enabled"),
+        "scheduler_interval": record.get("scheduler_interval"),
+    })
+    save_json_file(data_file, data)
+
+    if record.get("scheduler_enabled") and form.get("permissions_only") == "1":
+        _set_scheduler_persisted(user_id, True, record.get("scheduler_interval", 5))
+    elif form.get("permissions_only") == "1":
+        if user_id in bot_schedulers and bot_schedulers[user_id].running:
+            bot_schedulers[user_id].stop()
+            bot_schedulers.pop(user_id, None)
+        _set_scheduler_persisted(user_id, False, record.get("scheduler_interval", 5))
+
+    create_user_config_file(user_id)
+    return True, "User updated"
+
 # ========== AUTHENTICATION ROUTES ==========
 
 @app.route('/')
@@ -522,8 +747,7 @@ def landing():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     """User registration - requires admin password"""
-    # Check for admin session or admin password
-    is_admin_session = session.get('is_admin', False)
+    is_admin_session = _has_admin_access()
     
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
@@ -548,49 +772,10 @@ def register():
             flash('Passwords do not match', 'error')
             return redirect(url_for('register'))
         
-        if len(password) < 6:
-            flash('Password must be at least 6 characters', 'error')
+        user_id, err = _create_user_account(email, password)
+        if err:
+            flash(err, 'error')
             return redirect(url_for('register'))
-        
-        users = load_json_file(USERS_FILE, {})
-        
-        # Check if email exists
-        for user_id, user_data in users.items():
-            if user_data.get('email', '').lower() == email:
-                flash('Email already registered', 'error')
-                return redirect(url_for('register'))
-        
-        # Create new user
-        user_id = secrets.token_hex(8)
-        users[user_id] = {
-            'email': email,
-            'password_hash': generate_password_hash(password),
-            'created_at': datetime.now().isoformat(),
-            'a1_email': None,
-            'a1_password': None,
-            'message': None,
-            'onboarding_complete': False
-        }
-        save_json_file(USERS_FILE, users)
-        
-        # Initialize user data files
-        user_data_file = USER_DATA_DIR / f"{user_id}_data.json"
-        save_json_file(user_data_file, {
-            'user_id': user_id,
-            'email': email,
-            'a1_email': None,
-            'a1_password': None,
-            'message': None,
-            'created_at': datetime.now().isoformat()
-        })
-        
-        # Initialize empty requests DB for user
-        user_requests_file = USER_DATA_DIR / f"{user_id}_requests.json"
-        save_json_file(user_requests_file, {})
-        
-        # Initialize empty tokens for user
-        user_tokens_file = USER_DATA_DIR / f"{user_id}_tokens.json"
-        save_json_file(user_tokens_file, {})
         
         flash('Account created successfully!', 'success')
         
@@ -628,6 +813,8 @@ def login():
 
             if user_data.get('is_admin'):
                 session['is_admin'] = True
+            else:
+                session.pop('is_admin', None)
 
             dest = _safe_redirect_target(
                 request.form.get('next') or request.args.get('next')
@@ -645,11 +832,105 @@ def login():
     
     return render_template('login.html')
 
+
+def _find_user_id_by_email(email: str) -> tuple[str | None, dict | None]:
+    email = email.strip().lower()
+    users = load_json_file(USERS_FILE, {})
+    for uid, data in users.items():
+        if data.get('email', '').lower() == email:
+            return uid, data
+    return None, None
+
+
+def _external_url(endpoint: str, **values) -> str:
+    """Build absolute URL for emails (respects ProxyFix / HTTPS)."""
+    return request.url_root.rstrip('/') + url_for(endpoint, **values)
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Request a password reset link by email."""
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        if not email:
+            flash('Please enter your email address', 'error')
+            return redirect(url_for('forgot_password'))
+
+        user_id, user_data = _find_user_id_by_email(email)
+        if user_id and user_data:
+            token = create_reset_token(user_id, email)
+            reset_url = _external_url('reset_password', token=token)
+            result = send_reset_email(to_addr=email, reset_url=reset_url)
+            if not result.get('success'):
+                flash(
+                    'Could not send reset email. Contact an admin or try again later.',
+                    'error',
+                )
+                return redirect(url_for('forgot_password'))
+
+        flash(
+            'If an account exists for that email, a reset link has been sent. '
+            'Check your inbox (and spam folder).',
+            'info',
+        )
+        return redirect(url_for('login'))
+
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Set a new password using a one-time reset token."""
+    if current_user.is_authenticated:
+        return redirect(url_for('dashboard'))
+
+    if request.method == 'GET':
+        entry = peek_reset_token(token)
+        if not entry:
+            flash('This reset link is invalid or has expired.', 'error')
+            return redirect(url_for('forgot_password'))
+        return render_template('reset_password.html', token=token, email=entry.get('email', ''))
+
+    entry = peek_reset_token(token)
+    if not entry:
+        flash('This reset link is invalid or has expired.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    password = request.form.get('password', '')
+    confirm = request.form.get('confirm_password', '')
+    if len(password) < 6:
+        flash('Password must be at least 6 characters', 'error')
+        return redirect(url_for('reset_password', token=token))
+    if password != confirm:
+        flash('Passwords do not match', 'error')
+        return redirect(url_for('reset_password', token=token))
+
+    entry = consume_reset_token(token)
+    if not entry:
+        flash('This reset link is invalid or has expired.', 'error')
+        return redirect(url_for('forgot_password'))
+
+    user_id = entry.get('user_id')
+    users = load_json_file(USERS_FILE, {})
+    if user_id not in users:
+        flash('Account not found', 'error')
+        return redirect(url_for('forgot_password'))
+
+    users[user_id]['password_hash'] = generate_password_hash(password)
+    save_json_file(USERS_FILE, users)
+    flash('Password updated. You can sign in now.', 'success')
+    return redirect(url_for('login'))
+
+
 @app.route('/logout')
 @login_required
 def logout():
     """User logout"""
     logout_user()
+    session.pop('is_admin', None)
     flash('Logged out successfully', 'info')
     return redirect(url_for('landing'))
 
@@ -702,7 +983,8 @@ def onboarding():
     
     return render_template('onboarding.html', 
                           user_data=user_data,
-                          global_config=get_global_config())
+                          global_config=get_global_config(),
+                          is_admin=_current_user_is_admin())
 
 # ========== DASHBOARD & MAIN ROUTES ==========
 
@@ -713,9 +995,11 @@ def dashboard():
     user_config = get_user_config(current_user.id)
     user_requests = load_json_file(current_user.get_requests_db(), {})
     user_tokens = load_merged_tokens(current_user.get_tokens_file())
-    
+    is_admin = _current_user_is_admin()
+
     token_status = {}
-    for acc in ['A1', 'A2']:
+    accounts = ['A1', 'A2'] if is_admin else ['A1']
+    for acc in accounts:
         token = user_tokens.get(acc, {}).get('access_token', '')
         token_status[acc] = {
             'has_token': bool(token),
@@ -739,7 +1023,10 @@ def dashboard():
 def tokens_page():
     """Token management page"""
     user_tokens = load_merged_tokens(current_user.get_tokens_file())
-    return render_template('tokens.html', tokens=user_tokens)
+    is_admin = _current_user_is_admin()
+    if not is_admin:
+        user_tokens = {k: v for k, v in user_tokens.items() if k != 'A2'}
+    return render_template('tokens.html', tokens=user_tokens, is_admin=is_admin)
 
 @app.route('/requests')
 @login_required
@@ -756,14 +1043,15 @@ def logs_page():
     if user_log.exists():
         with open(user_log) as f:
             log_content = f.read()
+    log_content = _filter_log_for_user(log_content, _current_user_is_admin())
     return render_template('logs.html', logs=log_content)
 
 @app.route('/config', methods=['GET', 'POST'])
 @login_required
 def config_page():
     """Configuration page"""
+    is_admin = _current_user_is_admin()
     if request.method == 'POST':
-        # Handle form submission
         user_data_file = current_user.get_user_data()
         user_data = load_json_file(user_data_file, {})
         
@@ -782,6 +1070,25 @@ def config_page():
                 'message': user_data.get('message')
             })
             save_json_file(USERS_FILE, users)
+
+        if is_admin:
+            global_config = get_global_config()
+            a2_email = request.form.get('a2_email', '').strip()
+            a2_password = request.form.get('a2_password', '')
+            if a2_email:
+                global_config.setdefault('account_a2', {})['email'] = a2_email
+            if a2_password:
+                global_config.setdefault('account_a2', {})['password'] = a2_password
+            interval = request.form.get('interval')
+            if interval:
+                try:
+                    global_config['check_interval_minutes'] = max(1, min(60, int(interval)))
+                except ValueError:
+                    pass
+            message = request.form.get('message', '').strip()
+            if message:
+                global_config['message'] = message
+            save_json_file(CONFIG_FILE, global_config)
         
         flash('Configuration saved successfully!', 'success')
         return redirect(url_for('config_page'))
@@ -790,7 +1097,8 @@ def config_page():
     global_config = get_global_config()
     return render_template('config.html', 
                           user_data=user_data,
-                          global_config=global_config)
+                          global_config=global_config,
+                          is_admin=is_admin)
 
 @app.route('/uclients')
 @login_required
@@ -813,6 +1121,9 @@ def umessages_page():
 def get_user_config_api():
     """Get user configuration"""
     config = get_user_config(current_user.id)
+    if not _current_user_is_admin():
+        config.pop('a2_email', None)
+        config.pop('a2_password', None)
     return jsonify(config)
 
 @app.route('/api/user/config', methods=['POST'])
@@ -851,11 +1162,15 @@ def update_user_config():
 def get_tokens():
     """Get current tokens"""
     user_tokens = load_merged_tokens(current_user.get_tokens_file())
+    is_admin = _current_user_is_admin()
     # Mask full tokens for security
     safe_tokens = {}
     for acc, data in user_tokens.items():
+        if acc == 'A2' and not is_admin:
+            continue
         safe_tokens[acc] = {
             'has_token': bool(data.get('access_token')),
+            'has_refresh_token': bool(data.get('refresh_token')),
             'preview': data.get('access_token', '')[:20] + '...' if data.get('access_token') else '',
             'email': data.get('user_email', '')
         }
@@ -866,6 +1181,10 @@ def get_tokens():
 def update_tokens():
     """Update tokens"""
     data = request.json
+    is_admin = _current_user_is_admin()
+    if 'A2' in data and not is_admin:
+        return jsonify({"success": False, "error": "Admin access required for A2 tokens"}), 403
+
     user_tokens_file = current_user.get_tokens_file()
     current = load_json_file(user_tokens_file, {})
 
@@ -879,15 +1198,17 @@ def update_tokens():
             current['A1']['refresh_token'] = refresh
         current['A1']['user_email'] = data['A1'].get('user_email', '')
 
-    if 'A2' in data:
+    if 'A2' in data and is_admin:
         global_tok = load_json_file(TOKENS_FILE, {})
         if not isinstance(global_tok, dict):
             global_tok = {}
         if 'A2' not in global_tok:
             global_tok['A2'] = {}
-        global_tok['A2']['access_token'] = data['A2'].get('access_token', '')
-        if data['A2'].get('refresh_token'):
-            global_tok['A2']['refresh_token'] = data['A2'].get('refresh_token')
+        a2_raw = data['A2'].get('access_token', '')
+        global_tok['A2']['access_token'] = extract_token_from_cookie_string(a2_raw) or a2_raw
+        refresh = data['A2'].get('refresh_token') or extract_refresh_token(a2_raw)
+        if refresh:
+            global_tok['A2']['refresh_token'] = refresh
         global_tok['A2']['user_email'] = data['A2'].get('user_email', '')
         save_json_file(TOKENS_FILE, global_tok)
 
@@ -948,8 +1269,6 @@ def _run_auth_refresh_for_user(user_id: str, is_admin: bool = False, accounts=No
     try:
         service = TokenAuthService()
         targets = list(accounts or ['A1'])
-        if is_admin and 'A2' not in targets:
-            targets.append('A2')
         return asyncio.run(service.refresh_accounts(targets))
     finally:
         for key, val in old_env.items():
@@ -957,6 +1276,17 @@ def _run_auth_refresh_for_user(user_id: str, is_admin: bool = False, accounts=No
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = val
+
+
+@app.route('/api/admin/a2/scan', methods=['POST'])
+@login_required
+def admin_force_a2_scan():
+    """Admin-only: refresh A2 token if needed and rebuild shared request cache."""
+    if not _has_admin_access():
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    with a2_scan_lock:
+        ok, msg = ensure_shared_a2_scan(force=True)
+    return jsonify({"success": ok, "message": msg})
 
 
 @app.route('/api/auth/refresh', methods=['POST'])
@@ -1537,49 +1867,62 @@ class BackgroundScheduler:
             f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}\n")
             f.flush()
     
+    def _load_users(self) -> dict:
+        """Load users.json with a brief retry (avoids race during concurrent saves)."""
+        for attempt in range(3):
+            users = load_json_file(USERS_FILE, {})
+            if isinstance(users, dict) and self.user_id in users:
+                return users
+            if attempt < 2:
+                time.sleep(0.1)
+        return users if isinstance(users, dict) else {}
+
     def _run_loop(self):
         """Main scheduler loop"""
-        while self.running:
-            try:
-                # Check if user has valid tokens and config
-                users = load_json_file(USERS_FILE, {})
-                if self.user_id not in users:
-                    self._log("[Background Scheduler] User not found, stopping")
-                    break
-                
-                user_data = users[self.user_id]
-                if not user_data.get('onboarding_complete'):
-                    self._log("[Background Scheduler] Onboarding incomplete, skipping")
+        try:
+            while self.running:
+                try:
+                    users = self._load_users()
+                    if self.user_id not in users:
+                        self._log(
+                            f"[Background Scheduler] User {self.user_id} not found, stopping"
+                        )
+                        break
+
+                    user_data = users[self.user_id]
+                    if not user_data.get('onboarding_complete'):
+                        self._log("[Background Scheduler] Onboarding incomplete, skipping")
+                        time.sleep(self.check_interval)
+                        continue
+
+                    if not user_data.get('a1_email') or not user_data.get('a1_password'):
+                        self._log("[Background Scheduler] A1 credentials missing, skipping")
+                        time.sleep(self.check_interval)
+                        continue
+
+                    self.next_run = datetime.now() + timedelta(seconds=self.check_interval)
+                    self._log(f"[Background Scheduler] Starting run #{self.run_count + 1}")
+
+                    success = self._run_bot()
+
+                    if success:
+                        self.run_count += 1
+                        self.last_run = datetime.now()
+                        self._log(f"[Background Scheduler] Run #{self.run_count} completed")
+                    else:
+                        self._log("[Background Scheduler] Run failed")
+
+                    self._log(
+                        f"[Background Scheduler] Next run in {self.check_interval // 60} minutes"
+                    )
                     time.sleep(self.check_interval)
-                    continue
-                
-                # Check if A1 credentials exist
-                if not user_data.get('a1_email') or not user_data.get('a1_password'):
-                    self._log("[Background Scheduler] A1 credentials missing, skipping")
-                    time.sleep(self.check_interval)
-                    continue
-                
-                self.next_run = datetime.now() + timedelta(seconds=self.check_interval)
-                self._log(f"[Background Scheduler] Starting run #{self.run_count + 1}")
-                
-                # Run the bot
-                success = self._run_bot()
-                
-                if success:
-                    self.run_count += 1
-                    self.last_run = datetime.now()
-                    self._log(f"[Background Scheduler] Run #{self.run_count} completed")
-                else:
-                    self._log("[Background Scheduler] Run failed")
-                
-                # Wait for next interval
-                self._log(f"[Background Scheduler] Next run in {self.check_interval // 60} minutes")
-                time.sleep(self.check_interval)
-                
-            except Exception as e:
-                self._log(f"[Background Scheduler] Error: {e}")
-                time.sleep(60)  # Wait 1 minute on error before retry
-    
+
+                except Exception as e:
+                    self._log(f"[Background Scheduler] Error: {e}")
+                    time.sleep(60)
+        finally:
+            self.running = False
+
     def _run_bot(self):
         """Execute the bot in background (serialized with manual runs)."""
         log_header = (
@@ -1602,18 +1945,27 @@ def restore_all_schedulers() -> None:
 
 
 _schedulers_restored = False
+_reports_started = False
 
 
 @app.before_request
 def _restore_schedulers_once():
-    global _schedulers_restored
-    if _schedulers_restored:
-        return
-    _schedulers_restored = True
-    try:
-        restore_all_schedulers()
-    except Exception as e:
-        print(f"Scheduler restore warning: {e}")
+    global _schedulers_restored, _reports_started
+    if not _schedulers_restored:
+        _schedulers_restored = True
+        try:
+            restore_all_schedulers()
+        except Exception as e:
+            print(f"Scheduler restore warning: {e}")
+    if not _reports_started:
+        _reports_started = True
+        try:
+            get_report_scheduler(
+                get_bot_processes=lambda: bot_processes,
+                get_bot_schedulers=lambda: bot_schedulers,
+            ).start()
+        except Exception as e:
+            print(f"Report scheduler warning: {e}")
 
 
 @app.route('/api/scheduler/start', methods=['POST'])
@@ -1657,6 +2009,55 @@ def stop_scheduler():
         del bot_schedulers[user_id]
     _set_scheduler_persisted(user_id, False)
     return jsonify({"success": True, "message": "Background scheduler stopped"})
+
+
+@app.route('/api/reports/send', methods=['POST'])
+@login_required
+def send_report_now():
+    """Send a report email immediately (admin only). Body: { \"period\": \"test\"|\"daily\"|\"weekly\"|\"monthly\" }."""
+    if not _require_admin_user():
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+
+    data = request.get_json(silent=True) or {}
+    period = (data.get("period") or "test").strip().lower()
+    if period not in ("test", "daily", "weekly", "monthly"):
+        return jsonify({"success": False, "error": "Invalid period"}), 400
+
+    sched = get_report_scheduler(
+        get_bot_processes=lambda: bot_processes,
+        get_bot_schedulers=lambda: bot_schedulers,
+    )
+    result = sched.send_now(period)
+    status = 200 if result.get("success") else 500
+    return jsonify(result), status
+
+
+@app.route('/api/reports/status', methods=['GET'])
+@login_required
+def reports_status():
+    """Report email scheduler configuration (admin only)."""
+    if not _require_admin_user():
+        return jsonify({"success": False, "error": "Admin access required"}), 403
+    from cmbot.storage.json_store import load_json as _load
+    from pathlib import Path as _Path
+
+    settings = get_report_settings()
+    state = _load(_Path("user_data/report_scheduler_state.json"), {})
+    return jsonify({
+        "success": True,
+        "settings": {
+            "enabled": settings["enabled"],
+            "to": settings["to"],
+            "smtp_host": settings["smtp_host"],
+            "smtp_user": settings["smtp_user"],
+            "timezone": settings["timezone"],
+            "daily_hour": settings["daily_hour"],
+            "weekly_weekday": settings["weekly_weekday"],
+            "monthly_day": settings["monthly_day"],
+            "smtp_configured": bool(settings["smtp_user"] and settings["smtp_password"]),
+        },
+        "state": state,
+    })
 
 
 @app.route('/api/scheduler/status', methods=['GET'])
@@ -1727,7 +2128,7 @@ def admin_login():
 @app.route('/admin/dashboard')
 def admin_dashboard():
     """Admin dashboard - protected"""
-    if not session.get('is_admin'):
+    if not _has_admin_access():
         flash('Admin access required', 'error')
         return redirect(url_for('admin_login'))
     
@@ -1777,11 +2178,49 @@ def admin_dashboard():
         'total_requests': total_requests,
         'onboarded_users': onboarded_count
     }
+
+    from cmbot.bot.shared_scan import load_stale_shared_scan
+
+    fresh_a2, _ = load_shared_scan()
+    cached_a2, scanned_at = load_stale_shared_scan()
+    global_tokens = load_json_file(TOKENS_FILE, {})
+    a2_scan = {
+        'count': len(cached_a2 or []),
+        'scanned_at': scanned_at,
+        'fresh': fresh_a2 is not None,
+        'has_a2_token': bool(global_tokens.get('A2', {}).get('access_token')),
+    }
     
     return render_template('admin_dashboard.html',
                          users=users,
                          stats=stats,
-                         global_config=global_config)
+                         global_config=global_config,
+                         a2_scan=a2_scan)
+
+
+@app.route('/admin/users/create', methods=['POST'])
+def admin_create_user():
+    """Admin-only: create a new user account."""
+    if not _has_admin_access():
+        flash('Admin access required', 'error')
+        return redirect(url_for('admin_login'))
+
+    email = request.form.get('email', '').strip().lower()
+    password = request.form.get('password', '')
+    confirm_password = request.form.get('confirm_password', '')
+
+    if password != confirm_password:
+        flash('Passwords do not match', 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    user_id, err = _create_user_account(email, password)
+    if err:
+        flash(err, 'error')
+        return redirect(url_for('admin_dashboard'))
+
+    flash(f'Account created for {email}', 'success')
+    return redirect(url_for('admin_dashboard'))
+
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -1790,32 +2229,94 @@ def admin_logout():
     flash('Admin logged out', 'info')
     return redirect(url_for('landing'))
 
-@app.route('/admin/user/<user_id>')
+@app.route('/admin/user/<user_id>', methods=['GET'])
 def admin_view_user(user_id):
-    """View specific user details"""
-    if not session.get('is_admin'):
+    """Admin UI for a single user."""
+    if not _has_admin_access():
         flash('Admin access required', 'error')
         return redirect(url_for('admin_login'))
-    
+
     users = load_json_file(USERS_FILE, {})
     user_data = users.get(user_id)
-    
     if not user_data:
         flash('User not found', 'error')
         return redirect(url_for('admin_dashboard'))
-    
-    # Load user's data
+
     user_requests = load_json_file(USER_DATA_DIR / f"{user_id}_requests.json", {})
     user_tokens = load_merged_tokens(USER_DATA_DIR / f"{user_id}_tokens.json")
-    
+    requests_list = []
+    for rid, req in user_requests.items():
+        if isinstance(req, dict):
+            item = dict(req)
+            item.setdefault("request_id", rid)
+            requests_list.append(item)
+    requests_list.sort(key=lambda x: x.get("processed_at") or "", reverse=True)
+
+    bot_status = get_bot_status_for_user(user_id)
+    sched = bot_schedulers.get(user_id)
+    scheduler_running = bool(sched and sched.running)
+
+    return render_template(
+        'admin_user.html',
+        user_id=user_id,
+        user=user_data,
+        requests=requests_list,
+        requests_count=len(user_requests),
+        tokens={
+            'A1': bool(user_tokens.get('A1', {}).get('access_token')),
+            'A2': bool(user_tokens.get('A2', {}).get('access_token')),
+        },
+        bot_status=bot_status,
+        scheduler_running=scheduler_running,
+    )
+
+
+@app.route('/admin/user/<user_id>/update', methods=['POST'])
+def admin_update_user(user_id):
+    if not _has_admin_access():
+        flash('Admin access required', 'error')
+        return redirect(url_for('admin_login'))
+
+    ok, msg = _update_user_account(user_id, request.form)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('admin_view_user', user_id=user_id))
+
+
+@app.route('/admin/user/<user_id>/delete', methods=['POST'])
+def admin_delete_user(user_id):
+    if not _has_admin_access():
+        flash('Admin access required', 'error')
+        return redirect(url_for('admin_login'))
+
+    ok, msg = _delete_user_account(user_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('admin_dashboard') if ok else url_for('admin_view_user', user_id=user_id))
+
+
+@app.route('/api/admin/user/<user_id>', methods=['GET'])
+def admin_view_user_api(user_id):
+    """JSON API for user details (optional)."""
+    if not _has_admin_access():
+        return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+    users = load_json_file(USERS_FILE, {})
+    user_data = users.get(user_id)
+    if not user_data:
+        return jsonify({'success': False, 'error': 'User not found'}), 404
+
+    user_requests = load_json_file(USER_DATA_DIR / f"{user_id}_requests.json", {})
+    user_tokens = load_merged_tokens(USER_DATA_DIR / f"{user_id}_tokens.json")
+    safe_user = {k: v for k, v in user_data.items() if k != 'password_hash'}
+
     return jsonify({
-        'user': user_data,
+        'success': True,
+        'user': safe_user,
         'requests_count': len(user_requests),
-        'requests': list(user_requests.values())[:10],  # Show last 10
+        'requests': list(user_requests.values())[:10],
         'tokens': {
             'A1': bool(user_tokens.get('A1', {}).get('access_token')),
-            'A2': bool(user_tokens.get('A2', {}).get('access_token'))
-        }
+            'A2': bool(user_tokens.get('A2', {}).get('access_token')),
+        },
     })
 
 @app.route('/api/dashboard/bundle', methods=['GET'])
@@ -1823,10 +2324,12 @@ def admin_view_user(user_id):
 def dashboard_bundle():
     """Single poll endpoint for dashboard (bot, scheduler, stats, logs)."""
     user_id = current_user.id
+    is_admin = _current_user_is_admin()
     user_requests = load_json_file(current_user.get_requests_db(), {})
     user_tokens = load_merged_tokens(current_user.get_tokens_file())
     token_status = {}
-    for acc in ('A1', 'A2'):
+    accounts = ('A1', 'A2') if is_admin else ('A1',)
+    for acc in accounts:
         token = user_tokens.get(acc, {}).get('access_token', '')
         token_status[acc] = {
             'has_token': bool(token),
@@ -1865,6 +2368,7 @@ def dashboard_bundle():
         with open(user_log, encoding='utf-8', errors='replace') as f:
             content = f.read()
             log_content = content[-12000:] if len(content) > 12000 else content
+    log_content = _filter_log_for_user(log_content, is_admin)
 
     return jsonify({
         'bot': bot_status,
@@ -1875,6 +2379,7 @@ def dashboard_bundle():
         },
         'logs': log_content,
         'bot_running': bot_running,
+        'is_admin': is_admin,
     })
 
 
@@ -1882,11 +2387,13 @@ def dashboard_bundle():
 @login_required
 def get_dashboard_stats():
     """Get fresh dashboard stats"""
+    is_admin = _current_user_is_admin()
     user_requests = load_json_file(current_user.get_requests_db(), {})
     user_tokens = load_merged_tokens(current_user.get_tokens_file())
     
     token_status = {}
-    for acc in ['A1', 'A2']:
+    accounts = ['A1', 'A2'] if is_admin else ['A1']
+    for acc in accounts:
         token = user_tokens.get(acc, {}).get('access_token', '')
         token_status[acc] = {
             'has_token': bool(token),
@@ -1951,8 +2458,7 @@ def scan_requests():
 def get_logs():
     """Tail of user log file for live dashboard updates."""
     user_log = USER_DATA_DIR / f"{current_user.id}.log"
-    users = load_json_file(USERS_FILE, {})
-    is_admin = users.get(current_user.id, {}).get('is_admin', False)
+    is_admin = _current_user_is_admin()
     bot_running = get_bot_status_for_user(current_user.id).get("running", False)
 
     log_content = ""
@@ -1960,20 +2466,7 @@ def get_logs():
         with open(user_log, encoding="utf-8", errors="replace") as f:
             content = f.read()
             log_content = content[-12000:] if len(content) > 12000 else content
-
-        if not is_admin:
-            filtered_lines = []
-            for line in log_content.split("\n"):
-                if not line.strip():
-                    continue
-                line_lower = line.lower()
-                if any(skip in line_lower for skip in [
-                    "token extracted:", "access_token=", "refresh_token=",
-                    "persistent context", "localstorage",
-                ]):
-                    continue
-                filtered_lines.append(line)
-            log_content = "\n".join(filtered_lines) if filtered_lines else log_content
+        log_content = _filter_log_for_user(log_content, is_admin)
 
     return jsonify({
         "logs": log_content,

@@ -15,6 +15,9 @@
                     {% else %}
                     <span class="badge badge-warning"><i class="fas fa-exclamation"></i> Missing</span>
                     {% endif %}
+                    {% if tokens.A1 and tokens.A1.refresh_token %}
+                    <span class="badge badge-info"><i class="fas fa-sync"></i> Refresh set</span>
+                    {% endif %}
                 </div>
             </div>
             <div class="stat-icon {% if tokens.A1 and tokens.A1.access_token %}success{% else %}warning{% endif %}">
@@ -28,7 +31,8 @@
         {% endif %}
     </div>
     
-    <!-- A2 Token Status -->
+    {% if is_admin %}
+    <!-- A2 Token Status (admin only) -->
     <div class="stat-card {% if tokens.A2 and tokens.A2.access_token %}success{% else %}danger{% endif %}">
         <div class="stat-header">
             <div>
@@ -38,6 +42,9 @@
                     <span class="badge badge-success"><i class="fas fa-check"></i> Valid</span>
                     {% else %}
                     <span class="badge badge-danger"><i class="fas fa-times"></i> Missing</span>
+                    {% endif %}
+                    {% if tokens.A2 and tokens.A2.refresh_token %}
+                    <span class="badge badge-info"><i class="fas fa-sync"></i> Refresh set</span>
                     {% endif %}
                 </div>
             </div>
@@ -51,6 +58,7 @@
         </p>
         {% endif %}
     </div>
+    {% endif %}
 </div>
 
 <div class="content-grid">
@@ -68,42 +76,52 @@
                     <i class="fas fa-sync"></i> Refresh A1 Token Automatically
                 </button>
                 <div class="form-group">
-                    <label class="form-label">Manual fallback — Access Token</label>
-                    <textarea id="a1-token" class="form-control" rows="4" placeholder="Paste full document.cookie from Codementor (includes ACCESS_TOKEN + REFRESH_TOKEN)..."></textarea>
+                    <label class="form-label">Manual fallback — Access Token or Cookie</label>
+                    <textarea id="a1-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN or full document.cookie from Codementor..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Refresh Token (optional if not in cookie above)</label>
+                    <textarea id="a1-refresh-token" class="form-control" rows="2" placeholder="Paste REFRESH_TOKEN value...">{{ tokens.A1.refresh_token if tokens.A1 and tokens.A1.refresh_token else '' }}</textarea>
                 </div>
                 
                 <div style="display: flex; gap: 12px;">
                     <button type="button" class="btn btn-success" onclick="saveToken('A1')">
                         <i class="fas fa-save"></i> Save Token (manual)
                     </button>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('a1-token').value=''">
+                    <button type="button" class="btn btn-secondary" onclick="clearTokenFields('A1')">
                         <i class="fas fa-trash"></i> Clear
                     </button>
                 </div>
             </div>
         </div>
         
-        <!-- A2 Token Form -->
+        {% if is_admin %}
+        <!-- A2 Token Form (admin only) -->
         <div class="card" style="margin-top: 24px;">
             <div class="card-header">
                 <span class="card-title"><i class="fas fa-key" style="margin-right: 8px; color: var(--danger);"></i>Update A2 Token (Scanner)</span>
             </div>
             <div class="card-body">
                 <div class="form-group">
-                    <label class="form-label">Access Token</label>
-                    <textarea id="a2-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN here from Firefox (A2)..."></textarea>
+                    <label class="form-label">Access Token or Cookie</label>
+                    <textarea id="a2-token" class="form-control" rows="4" placeholder="Paste ACCESS_TOKEN or full document.cookie from Codementor (A2)..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Refresh Token (optional if not in cookie above)</label>
+                    <textarea id="a2-refresh-token" class="form-control" rows="2" placeholder="Paste REFRESH_TOKEN value...">{{ tokens.A2.refresh_token if tokens.A2 and tokens.A2.refresh_token else '' }}</textarea>
                 </div>
                 
                 <div style="display: flex; gap: 12px;">
                     <button type="button" class="btn btn-success" onclick="saveToken('A2')">
                         <i class="fas fa-save"></i> Save Token
                     </button>
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('a2-token').value=''">
+                    <button type="button" class="btn btn-secondary" onclick="clearTokenFields('A2')">
                         <i class="fas fa-trash"></i> Clear
                     </button>
                 </div>
             </div>
         </div>
+        {% endif %}
     </div>
     
     <!-- Instructions Card -->
@@ -139,18 +157,29 @@ async function refreshAuth() {
     }
 }
 
+function clearTokenFields(account) {
+    const prefix = account.toLowerCase();
+    const accessEl = document.getElementById(prefix + '-token');
+    const refreshEl = document.getElementById(prefix + '-refresh-token');
+    if (accessEl) accessEl.value = '';
+    if (refreshEl) refreshEl.value = '';
+}
+
 async function saveToken(account) {
-    const token = document.getElementById(account.toLowerCase() + '-token').value.trim();
-    if (!token) {
-        alert('Please enter a token');
+    const prefix = account.toLowerCase();
+    const token = document.getElementById(prefix + '-token').value.trim();
+    const refreshEl = document.getElementById(prefix + '-refresh-token');
+    const refreshToken = refreshEl ? refreshEl.value.trim() : '';
+    if (!token && !refreshToken) {
+        alert('Please enter an access token or refresh token');
         return;
     }
     
     const data = {};
     data[account] = {
         access_token: token,
-        refresh_token: '',
-        email: account === 'A2' ? 'kodaoluidris@gmail.com' : 'tescointsite@gmail.com'
+        refresh_token: refreshToken,
+        user_email: ''
     };
     
     try {
@@ -160,8 +189,8 @@ async function saveToken(account) {
             body: JSON.stringify(data)
         });
         const result = await response.json();
-        alert(result.message);
-        location.reload();
+        alert(result.message || result.error || 'Saved');
+        if (result.success) location.reload();
     } catch (e) {
         alert('Error: ' + e.message);
     }

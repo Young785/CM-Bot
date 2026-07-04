@@ -8,7 +8,14 @@
       "env": {
         "FLASK_PORT": "5030",
         "FLASK_DEBUG": "0",
-        "SESSION_COOKIE_SECURE": "1"
+        "SESSION_COOKIE_SECURE": "1",
+        "REPORTS_ENABLED": "1",
+        "REPORT_EMAIL_TO": "ayomikunariyo@gmail.com",
+        "REPORT_TIMEZONE": "Africa/Lagos",
+        "REPORT_HOUR": "8",
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_USE_A1_PASSWORD": "1"
       },
       "instances": 1,
       "autorestart": true,

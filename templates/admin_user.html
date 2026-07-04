@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block page_title %}User: {{ user.email }}{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div style="margin-bottom: 24px; padding: 16px 20px; border-radius: 12px; background: {% if category == 'success' %}rgba(44, 168, 127, 0.1){% elif category == 'error' %}rgba(220, 38, 38, 0.1){% else %}rgba(62, 201, 215, 0.1){% endif %}; border-left: 4px solid {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; color: {% if category == 'success' %}var(--success){% elif category == 'error' %}var(--danger){% else %}var(--info){% endif %}; font-size: 0.875rem;">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <a href="/admin/dashboard" style="color: #64748b; text-decoration: none; font-size: 0.875rem;">
+            <i class="fas fa-arrow-left"></i> Back to Admin Panel
+        </a>
+        <h2 style="margin-top: 8px; font-size: 1.5rem;">{{ user.email }}</h2>
+        <p style="color: #64748b; font-size: 0.875rem;">User ID: <code>{{ user_id }}</code></p>
+    </div>
+    <form action="/admin/user/{{ user_id }}/delete" method="POST" onsubmit="return confirm('Delete this user permanently? This cannot be undone.');">
+        <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Delete User</button>
+    </form>
+</div>
+
+<div class="stats-grid" style="margin-bottom: 24px;">
+    <div class="stat-card {% if user.onboarding_complete %}success{% else %}warning{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Status</div>
+                <div class="stat-value" style="font-size: 1.25rem;">{{ 'Active' if user.onboarding_complete else 'Pending' }}</div>
+            </div>
+            <div class="stat-icon {% if user.onboarding_complete %}success{% else %}warning{% endif %}"><i class="fas fa-user-check"></i></div>
+        </div>
+    </div>
+    <div class="stat-card {% if tokens.A1 %}success{% else %}danger{% endif %}">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">A1 Token</div>
+                <div class="stat-value" style="font-size: 1.25rem;">{{ 'Valid' if tokens.A1 else 'Missing' }}</div>
+            </div>
+            <div class="stat-icon {% if tokens.A1 %}success{% else %}danger{% endif %}"><i class="fas fa-key"></i></div>
+        </div>
+    </div>
+    <div class="stat-card primary">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Requests Processed</div>
+                <div class="stat-value">{{ requests_count }}</div>
+            </div>
+            <div class="stat-icon primary"><i class="fas fa-list"></i></div>
+        </div>
+    </div>
+    <div class="stat-card info">
+        <div class="stat-header">
+            <div>
+                <div class="stat-label">Bot / Scheduler</div>
+                <div class="stat-value" style="font-size: 1rem;">{{ 'Running' if bot_status.running else 'Idle' }} / {{ 'On' if scheduler_running else 'Off' }}</div>
+            </div>
+            <div class="stat-icon info"><i class="fas fa-robot"></i></div>
+        </div>
+    </div>
+</div>
+
+<div class="content-grid">
+    <div class="col-8">
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-edit" style="margin-right: 8px; color: var(--primary);"></i>Edit User</span>
+            </div>
+            <div class="card-body">
+                <form action="/admin/user/{{ user_id }}/update" method="POST">
+                    <div class="form-group">
+                        <label class="form-label">Login Email</label>
+                        <input type="email" name="email" class="form-control" value="{{ user.email }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">New Login Password <span style="color:#94a3b8;font-weight:400;">(leave blank to keep current)</span></label>
+                        <input type="password" name="new_password" class="form-control" placeholder="Min 6 characters" minlength="6">
+                    </div>
+
+                    <div class="card" style="background: #f8fafc; margin-bottom: 16px;">
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Codementor A1 Email</label>
+                                <input type="email" name="a1_email" class="form-control" value="{{ user.a1_email or '' }}" placeholder="codementor@email.com">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">Codementor A1 Password</label>
+                                <input type="password" name="a1_password" class="form-control" value="{{ user.a1_password or '' }}" placeholder="••••••••">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Default Message</label>
+                        <textarea name="message" class="form-control" rows="3" placeholder="Interest message...">{{ user.message or '' }}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Scheduler Interval (minutes)</label>
+                        <input type="number" name="scheduler_interval" class="form-control" value="{{ user.scheduler_interval or 5 }}" min="1" max="60">
+                    </div>
+
+                    <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Changes</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-list" style="margin-right: 8px; color: var(--primary);"></i>Recent Requests ({{ requests_count }})</span>
+            </div>
+            <div class="card-body" style="padding: 0;">
+                {% if requests %}
+                <div style="overflow-x: auto; max-height: 480px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: #f8fafc; position: sticky; top: 0;">
+                                <th style="padding: 12px 16px; text-align: left; font-size: 0.75rem; color: #64748b;">Title</th>
+                                <th style="padding: 12px 16px; text-align: left; font-size: 0.75rem; color: #64748b;">Author</th>
+                                <th style="padding: 12px 16px; text-align: left; font-size: 0.75rem; color: #64748b;">Budget</th>
+                                <th style="padding: 12px 16px; text-align: left; font-size: 0.75rem; color: #64748b;">Processed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for req in requests[:50] %}
+                            <tr style="border-top: 1px solid #f1f5f9;">
+                                <td style="padding: 12px 16px; max-width: 280px;">
+                                    {% if req.url %}
+                                    <a href="{{ req.url }}" target="_blank" rel="noopener" style="color: var(--primary); text-decoration: none;">{{ req.title or 'Untitled' }}</a>
+                                    {% else %}
+                                    {{ req.title or 'Untitled' }}
+                                    {% endif %}
+                                </td>
+                                <td style="padding: 12px 16px;">{{ req.author or '—' }}</td>
+                                <td style="padding: 12px 16px;">{{ req.budget or '—' }}</td>
+                                <td style="padding: 12px 16px; font-size: 0.8rem; color: #64748b;">{{ req.processed_at[:16] if req.processed_at else '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div style="text-align: center; padding: 48px 20px; color: #64748b;">No requests processed yet.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-4">
+        <div class="card" style="margin-bottom: 24px;">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-shield-alt" style="margin-right: 8px; color: var(--warning);"></i>Permissions</span>
+            </div>
+            <div class="card-body">
+                <form action="/admin/user/{{ user_id }}/update" method="POST" id="permissions-form">
+                    <input type="hidden" name="permissions_only" value="1">
+                    <input type="hidden" name="scheduler_interval" value="{{ user.scheduler_interval or 5 }}">
+
+                    <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; cursor: pointer;">
+                        <input type="checkbox" name="is_admin" {% if user.is_admin %}checked{% endif %}>
+                        <span><strong>Admin</strong><br><span style="font-size: 0.8rem; color: #64748b;">Access admin panel, A2 settings, all-user clients view</span></span>
+                    </label>
+
+                    <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; cursor: pointer;">
+                        <input type="checkbox" name="onboarding_complete" {% if user.onboarding_complete %}checked{% endif %}>
+                        <span><strong>Onboarding complete</strong><br><span style="font-size: 0.8rem; color: #64748b;">Allow dashboard and bot runs</span></span>
+                    </label>
+
+                    <label style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; cursor: pointer;">
+                        <input type="checkbox" name="scheduler_enabled" {% if user.scheduler_enabled %}checked{% endif %}>
+                        <span><strong>Auto scheduler</strong><br><span style="font-size: 0.8rem; color: #64748b;">Background bot runs on interval</span></span>
+                    </label>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%;"><i class="fas fa-save"></i> Save Permissions</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title"><i class="fas fa-info-circle" style="margin-right: 8px; color: var(--info);"></i>Account Info</span>
+            </div>
+            <div class="card-body" style="font-size: 0.875rem; color: #64748b; line-height: 1.8;">
+                <div><strong>Created:</strong> {{ user.created_at[:19] if user.created_at else 'Unknown' }}</div>
+                <div><strong>A1 email:</strong> {{ user.a1_email or 'Not set' }}</div>
+                <div><strong>Roles:</strong>
+                    {% if user.is_admin %}<span class="badge badge-warning">Admin</span>{% endif %}
+                    {% if user.onboarding_complete %}<span class="badge badge-success">Active</span>{% else %}<span class="badge badge-warning">Pending</span>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -177,9 +177,11 @@
         
         <div class="info-box">
             <h4>How It Works</h4>
+            {% if is_admin %}
             <p><strong>A2 (Scanner):</strong> Shared system account that scans for new requests.</p>
+            {% endif %}
             <p><strong>A1 (Your Account):</strong> Your personal account that expresses interest in requests.</p>
-            <p style="margin-top: 10px; color: #7267ef; font-weight: 500;">You'll need to login to Chrome once to extract your tokens.</p>
+            <p style="margin-top: 10px; color: #7267ef; font-weight: 500;">After setup, tokens refresh automatically from your credentials.</p>
         </div>
         
         <form action="/onboarding" method="POST">

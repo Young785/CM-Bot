@@ -68,6 +68,46 @@ pm2 start ecosystem.config.json
 
 Per-user A1 credentials live in `users.json` / `user_data/{id}_data.json` after onboarding.
 
+## Email reports (daily / weekly / monthly)
+
+Automated summary emails are sent to **ayomikunariyo@gmail.com** (configurable) with user stats, requests processed, and bot/scheduler status.
+
+**Schedule** (default timezone `Africa/Lagos`, send at **08:00**):
+
+| Report  | When                          |
+|---------|-------------------------------|
+| Daily   | Every day at 08:00            |
+| Weekly  | Mondays at 08:00              |
+| Monthly | 1st of each month at 08:00    |
+
+**SMTP setup** (Gmail): create an [App Password](https://myaccount.google.com/apppasswords) and set in `ecosystem.config.json` or `config.json`:
+
+```json
+"reports": {
+  "enabled": true,
+  "to": "ayomikunariyo@gmail.com",
+  "smtp_user": "your_sender@gmail.com",
+  "smtp_password": "your_16_char_app_password"
+}
+```
+
+Or use env vars: `SMTP_USER`, `SMTP_PASSWORD`, `REPORT_EMAIL_TO`.
+
+**Send a test email now:**
+
+```bash
+.venv/bin/python scripts/send_report.py --period test
+```
+
+**Admin API** (logged in as admin):
+
+```bash
+curl -X POST https://your-host/api/reports/send \
+  -H "Content-Type: application/json" \
+  -b "session=..." \
+  -d '{"period":"test"}'
+```
+
 ## PM2
 
 ```bash

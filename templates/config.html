@@ -22,23 +22,24 @@
             </div>
             <div class="card-body">
                 <form method="POST" action="/config">
+                    {% if is_admin %}
                     <div class="card" style="background: #f8fafc; margin-bottom: 24px;">
                         <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
                             <span class="card-title" style="font-size: 0.875rem;"><i class="fas fa-search" style="margin-right: 8px; color: var(--info);"></i>Account A2 (Scanner)</span>
                         </div>
                         <div class="card-body">
-                            <p style="margin-bottom: 16px; color: #64748b; font-size: 0.875rem;">Used only to scan for new requests</p>
+                            <p style="margin-bottom: 16px; color: #64748b; font-size: 0.875rem;">Shared scanner account — admin only</p>
                             <div class="form-group">
                                 <label class="form-label">Email</label>
-                                <input type="email" name="a2_email" class="form-control" value="{{ global_config.account_a2.email }}" placeholder="scanner@example.com" required>
+                                <input type="email" name="a2_email" class="form-control" value="{{ global_config.account_a2.email if global_config.account_a2 else '' }}" placeholder="scanner@example.com">
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label class="form-label">Password</label>
-                                <input type="password" name="a2_password" class="form-control" value="{{ global_config.account_a2.password }}" placeholder="••••••••" required>
+                                <input type="password" name="a2_password" class="form-control" value="{{ global_config.account_a2.password if global_config.account_a2 else '' }}" placeholder="••••••••">
                             </div>
                         </div>
                     </div>
-                    
+                    {% endif %}
                     <div class="card" style="background: #f8fafc; margin-bottom: 24px;">
                         <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
                             <span class="card-title" style="font-size: 0.875rem;"><i class="fas fa-user" style="margin-right: 8px; color: var(--success);"></i>Account A1 (Interactor)</span>
